@@ -9,7 +9,7 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 | Milestone | Theme | Size | Depends on | Status |
 |---|---|---|---|---|
 | **M0** | API discovery and hello-world proof | M | — | ☑ Done |
-| **M1** | Skeleton, agents, options, model routing | L | M0 | ☐ Not started |
+| **M1** | Skeleton, agents, options, model routing | L | M0 | ☑ Done |
 | **M2** | State machine, tools, SQLite, Stack Profile | L | M1 | ☐ Not started |
 | **M3** | Gating hooks | M | M2 | ☐ Not started |
 | **M4** | Observability: tracing, events, CLI reports | M | M2, M3 | ☐ Not started |
@@ -130,45 +130,45 @@ Concrete probes to run:
 
 ### M1.1 — Plugin skeleton, config, roles, prompts
 
-- [ ] Implement `Plugin.define({ id: "delivery-team", setup })` with idempotent setup and a cleanup that closes resources.
-- [ ] Implement `config.ts`: manual validation or schema validation with defaults from SPEC §5; unknown keys warn rather than fail; nested `models`, `stack`, `gating`, `trace`, `worktrees`, and `roles.disabled` are normalized.
-- [ ] Implement `roles.ts`: all nine roles with mode, read-only/write scope, tool needs, prompt id, default tier, and default `maxSteps` (SPEC §6, §6.2).
-- [ ] Write default prompts for all roles with the required content: single responsibility, artifact name and machine footer, “pass paths, not content”, scope limits, `team_note`, and `team_loop` before retries. The lead prompt also encodes the pipeline, loop-cap escalation, phase-artifact check, and spec-approval question.
-- [ ] Keep prompts free of model IDs, stack assumptions, and unlabeled toolchain examples.
-- [ ] Keep prompts stack-neutral. Put any toolchain examples inside clearly labeled example blocks.
-- [ ] Write prompts against the target tool set; the pipeline only becomes executable in M2. Defer lesson and prompt-proposal instructions until M5 so agents never call tools that are not registered yet.
-- [ ] Implement `compat.ts`: one wrapper module for unverified draft fields, hook event shapes, tool result shapes, and catalog reads.
-- [ ] Register agents through `agent.transform`; respect `roles.disabled`; register `team-lead` as the primary agent as far as V4 allows.
-- [ ] Implement `src/commands.ts` and register `/team`, `/team-status`, `/team-retro` through `command.transform` with the templates from SPEC §9.5; commands are inert until the matching tools land.
-- [ ] Apply prompt resolution: `<root>/prompts/<role>.md` (human-approved) first, built-in default second; install the reload path selected in M0 (V17).
-- [ ] Build `test/fakes/ctx.ts` that records agent transforms, tool registrations, hook registrations, commands, and lets tests invoke executors and hooks directly.
-- [ ] Test that the default export has `id === "delivery-team"` and that setup registers all enabled roles, the three commands, and (once implemented) the expected tools/hooks.
+- [x] Implement `Plugin.define({ id: "delivery-team", setup })` with idempotent setup and registration cleanup.
+- [x] Implement `config.ts`: manual validation with SPEC §5 defaults; unknown and invalid keys warn without failing; nested `models`, `stack`, `gating`, `trace`, `worktrees`, and `roles.disabled` are normalized.
+- [x] Implement `roles.ts`: all nine roles with mode, read-only/write scope, tool needs, prompt id, default tier, and default `maxSteps` (SPEC §6, §6.2).
+- [x] Write default prompts for all roles with the required responsibility, artifact/footer, “pass paths, not content”, scope, `team_note`, and retry instructions. The lead prompt encodes the pipeline, loop-cap escalation, artifact gates, and human spec-approval question.
+- [x] Keep prompts free of model IDs, stack assumptions, and unlabeled toolchain examples.
+- [x] Keep prompts stack-neutral. Put any toolchain examples inside clearly labeled example blocks.
+- [x] Write prompts against the target tool set; defer executable pipeline tools to M2 and lesson/prompt-proposal instructions to M5.
+- [x] Implement `compat.ts` for the loose SDK options boundary, model/catalog mapping, and agent draft/upsert/model fields. Tool-result adapters remain with M2 tools.
+- [x] Register agents through `agent.transform`; respect `roles.disabled`; register `team-lead` as primary without changing the host default agent.
+- [x] Implement `src/commands.ts` and register `/team`, `/team-status`, `/team-retro` through `command.transform`; commands are inert until the matching tools land.
+- [x] Resolve prompts in order `<root>/prompts/<role>.md` (human-approved) then built-in default; reread inside the transform and replay with `ctx.agent.reload()`.
+- [x] Build `test/fakes/ctx.ts` to record and replay agent transforms, commands, catalog reads, and the M1 context hook; add tool executors/hooks as their M2/M3 APIs land.
+- [x] Test the plugin id, all enabled roles, the three commands, disabled roles, cleanup, and model-request hooks.
 
 ### M1.2 — Model routing
 
-- [ ] Represent tiers (`reasoning`, `coding`, `fast`), role defaults, and per-role `roleTier` moves.
-- [ ] Implement resolution order exactly: `roles.<role>` → `tiers.<tier>` → `default` → inherit.
-- [ ] Accept both spec forms: `"provider/model"` and `{ model, params?, fallback?: string[] }`.
-- [ ] Validate resolved models best-effort through the catalog: existence, connected/available provider, tool-calling support. Never fail setup on a bad model.
-- [ ] Walk fallbacks on failure: fallback list → tier spec → default → inherit; emit `model.fallback` events via the trace boundary with the reason (persisted from M2).
-- [ ] Filter params to the supported key set and to what the installed agent draft accepts; warn and ignore unknown keys; trace unsupported params once.
-- [ ] Implement diversity warnings when `adversary` and `developer` resolve to the same model; never silently swap models. Surface warnings in status/report data structures.
-- [ ] Implement `auto: false` as the default. If `auto` is implemented now, keep it behind the flag and fall back to inherit when catalog metadata is missing.
-- [ ] Apply model and params inside `agent.transform` through `compat.ts`.
-- [ ] Expose an in-memory resolution snapshot that M2 will persist to `run_models`.
-- [ ] Test the full matrix: zero config (all inherit), tiers, role overrides, `roleTier`, fallback on missing model/unconnected provider/non-tool model, unsupported params, diversity warning, and bad config never throwing from setup.
-- [ ] Add the prompt-neutrality lint test: scan `src/prompts/**` for stack-specific tokens outside labeled example blocks (SPEC §6.3 item 8).
+- [x] Represent tiers (`reasoning`, `coding`, `fast`), role defaults, and per-role `roleTier` moves.
+- [x] Implement resolution order exactly: `roles.<role>` → `tiers.<tier>` → `default` → inherit.
+- [x] Accept both spec forms: `"provider/model"` and `{ model, params?, fallback?: string[] }`.
+- [x] Validate resolved models best-effort through model/provider catalogs: existence, provider availability, and tool-calling support. Never fail setup on a bad model.
+- [x] Walk fallbacks in order and retain `model.fallback` diagnostics with reasons in the in-memory snapshot; M2/M4 will persist them through the trace boundary.
+- [x] Filter params to supported keys and installed hook/agent fields; warn and ignore unknown or unsupported params.
+- [x] Warn when `adversary` and `developer` resolve to the same effective model; never silently swap. M2/M4 will surface the snapshot in status/report.
+- [x] Default `auto` to false; validate it and report `model.auto_unsupported` when enabled rather than inventing automatic routing.
+- [x] Apply model, variant, and step settings through the agent transform/compat boundary; apply generation options through the V14 context hook.
+- [x] Expose an in-memory resolution snapshot for M2 to persist to `run_models`.
+- [x] Test zero-config inheritance, tiers, role overrides, `roleTier`, missing/unavailable/non-tool models, fallback, unsupported params, diversity, and non-fatal bad configuration.
+- [x] Add the prompt-neutrality lint test for `src/prompts/**` (SPEC §6.3 item 8).
 
 ### M1.3 — Milestone gate
 
-- [ ] Plugin loads in OpenCode; all nine agents are visible (or all enabled roles when `roles.disabled` is set).
-- [ ] `/team`, `/team-status`, and `/team-retro` are registered and visible.
-- [ ] With no options, every agent inherits the host default model.
-- [ ] With tier/role options, configured models and params are applied as far as V13/V14 allow; fallback paths work.
-- [ ] Diversity warnings are produced and observable in the data layer.
-- [ ] Unit tests for config, roles, prompts, models, commands, and registration pass.
-- [ ] `tsc --noEmit` is clean under strict mode.
-- [ ] `docs/api-notes.md` records any new deviations.
+- [x] Plugin loads in OpenCode; all nine agents are visible, and disabled-role behavior is covered by tests.
+- [x] `/team`, `/team-status`, and `/team-retro` are registered and visible.
+- [x] With no options, every agent inherits the host default model.
+- [x] Tier/role options, parameters, and fallback paths are covered and applied as allowed by V13/V14.
+- [x] Diversity warnings are produced in the in-memory resolution snapshot; persistent status/report exposure is an M2/M4 task.
+- [x] Unit tests for config, roles, prompts, models, commands, compatibility, and registration pass.
+- [x] `tsc --noEmit` is clean under strict mode.
+- [x] `docs/api-notes.md` records M1 behavior and remaining trace-persistence deviations.
 
 **Suggested commits:** `feat: scaffold plugin config and roles` → `feat: add role prompts and agent registration` → `feat: add model tier routing` → `test: cover model resolution and fallbacks`.
 

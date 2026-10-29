@@ -1,6 +1,6 @@
 # OpenCode V2 API notes
 
-Status: M0 discovery complete (2026-10-29). All V1–V17 items have an answer and a fallback.
+Status: M1 implementation and verification complete (2026-10-29). All V1–V17 items have an answer and a fallback.
 
 ## Toolchain and loading
 
@@ -54,3 +54,12 @@ opencode --standalone run --print-logs --auto --model opencode/deepseek-v4.1-fla
 - Use `edit` / `write` / `patch` as source-edit tools. Extract edit/write paths from `input.path`; inspect `patchText` for patch targets.
 - Keep `execute.after` tracing and event subscription non-throwing; abort the event iterator in cleanup.
 - Resolve project-relative paths from `ctx.location.directory`. Runtime data remains outside the plugin code; M0 created no product SQLite schema.
+
+## M1 implementation and verification
+
+- The development loader is `.opencode/plugins/delivery-team/index.ts`, which re-exports `src/index.ts`. A persistent OpenCode `2.2.0` server smoke test returned all nine team agents from `/api/agent` and `team`, `team-status`, and `team-retro` from `/api/command` after plugin activation.
+- Zero-config agents have no `model` field, preserving host-default inheritance. The real smoke test confirmed the agents and commands; model override, parameter, fallback, and disabled-role behavior is covered with the fake context.
+- `reasoningEffort` is mapped to a matching model variant only for explicit model routes. For inherited routes it is dropped with a warning so the agent model remains unset; this follows the V13/V14 boundary rather than sending an unverified provider option.
+- Model fallback, unsupported-parameter, catalog-validation, auto-routing, and diversity diagnostics are retained in `getDeliveryTeamSnapshot(context).models.events`. They are in-memory only in M1; M2/M4 will connect them to the trace/status/report data layer.
+- Config validation warnings are exposed separately in the same setup snapshot. There is no host logger on the installed Promise plugin `Context`; M1 does not write warnings to the TUI or persist events.
+- `ctx.agent.reload()` and `ctx.command.reload()` replay registrations during setup. Prompt files under `<root>/prompts/<role>.md` are read synchronously inside the agent transform, so a later agent reload sees updated human-approved prompts.
