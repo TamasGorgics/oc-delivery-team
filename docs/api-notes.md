@@ -1,54 +1,56 @@
 # OpenCode V2 API notes
 
-Status: M0 discovery in progress. This file is filled in during M0.2; entries below are verified during M0.1.
+Status: M0 discovery complete (2026-10-29). All V1–V17 items have an answer and a fallback.
 
-## Toolchain
+## Toolchain and loading
 
-| Item | Value | Source |
+| Item | Value | Evidence |
 |---|---|---|
-| OpenCode | `2.2.0` | `opencode --version`; `ctx.app.version` from the hello probe |
-| Plugin SDK/types | `@opencode/plugin@2.2.0` | installed package |
-| Host runtime | Bun `1.4.4` | `Bun.version` reported by the hello probe |
-| Development/test runtime | Bun `1.4.4` | `bun --version` |
-| Test runner | `bun test` | project decision; no Vitest |
-| Plugin entrypoint | Promise API from `@opencode/plugin` | `node_modules/@opencode/plugin/dist/promise` |
-| Schema/runtime types | `effect@4.0.1` (peer + dev) | host provides `effect` at runtime; SDK README |
+| OpenCode | `2.2.0` | `opencode --version`; `ctx.app.version` |
+| Plugin SDK | `@opencode/plugin@2.2.0`, Promise API from the package root | `package.json`; installed package exports `dist/promise/index.js` |
+| Host | Bun `1.4.4` | `Bun.version` in plugin setup |
+| Development/test | Bun `1.4.4`; `bun test`; TypeScript `7.0.2` | `package.json`, `bun --version` |
+| Schema dependency | `effect@4.0.1` | `package.json`; plugin SDK dependencies |
 
-### Deviations from SPEC
+The local plugin loader is `.opencode/plugins/<name>/index.ts`. M0.1's `hello` plugin loaded, registered `greeting`, and returned a result to a model. In a one-shot standalone API process `/api/plugin` can be empty before plugin setup finishes; after initialization it lists the active local plugins.
 
-- SPEC names `@opencode-ai/plugin/v2`; the installed OpenCode `2.2.0` resolves `@opencode/plugin` (default export path is the Promise API). Pin `@opencode/plugin@2.2.0`.
-- Actual tool declaration uses `input` / `output` schemas, not `jsonSchema`.
-- Actual Promise tool result shape is `{ output?, content?, metadata? }`; `content` is `string | Content[]`.
-- Actual Promise tool context fields are `sessionID`, `agent`, `messageID`, `id`, `signal`, `progress` (not `assistantMessageID` / `toolCallID`).
+At the M0 exit gate, both temporary plugin sources and the hello-only test were removed. `test/unit/api-contract.test.ts` keeps a small compile/runtime check for the installed SDK contract.
 
-## Local development loading
+Headless invocation verified:
 
-- Local discovery path: `.opencode/plugins/hello/` (immediate child directory with `index.ts`).
-- Verified with `opencode plugin list`:
+```sh
+opencode --standalone run --print-logs --auto --model opencode/deepseek-v4.1-flash-free --agent build '...'
+```
 
-  ```
-  ID     VERSION  SOURCE
-  hello  local    /Users/tamas/projects/oc-delivery-team/.opencode/plugins/hello
-  ```
+`opencode serve` is also usable for API-driven tests. The model-call experiment echoed an injected context token. Keep the call short and use a configured model; provider limits can make a run fail independently of plugin loading.
 
-- `opencode --standalone api get /api/plugin` returned `{"location":...,"data":[]}` for a one-shot private server even though `opencode plugin list` and the live session loaded `hello`. A long-running `opencode serve` returns `hello` as `{"id":"hello","source":{"type":"local","path":"..."},"state":{"status":"active"}}` from `/api/plugin`. Treat the one-shot result as lazy initialization, not proof of failure.
-- `opencode --server ... api get /api/tool` returns `404`; tool visibility is through `/api/plugin` and the model tool catalog.
-- Planned M1 loading path: root `opencode.jsonc` with a local `plugins` entry for the package. Keep `.opencode/plugins/hello/` through M0.2, then remove it at the M0 exit gate.
+## V1–V17 verification matrix
 
-## Verified in M0.1
+| Item | Resolved answer | Evidence / source | Fallback and SPEC deviation |
+|---|---|---|---|
+| **V1** Package / entrypoint | Use `@opencode/plugin@2.2.0`, package root (Promise API), `Plugin.define`. | Installed `@opencode/plugin/package.json`; `dist/promise/index.d.ts`; M0.1 loader probe. | Use the package resolved by the installed host. SPEC's `@opencode-ai/plugin/v2` name is not the installed package. |
+| **V2** Runtime / SQLite | Host is Bun `1.4.4`. Both `bun:sqlite` and `node:sqlite` work in the host. Both passed WAL, `busy_timeout=5000`, foreign-key enforcement, and parent/child read/write tests. | Runtime probe; temporary DBs outside the repo; `sqlite.json`. | Select `bun:sqlite` under Bun and `node:sqlite` under Node ≥22. No product schema was created. |
+| **V3** Agent fields | Use `system`, `permissions: { action, resource, effect }[]`, `model: Model.Ref`, `steps`, and `request: { settings, headers, body }`. There is no `tools` field in `Agent.Info`. `mode` and `hidden` are also present. | `node_modules/@opencode/schema/dist/agent.d.ts`; agent transform/list runtime probe. | Use `system` instead of `prompt`; use permission rules instead of `permission:{edit,bash}`. Restrict tools with permissions/gates, not an agent `tools` field. A `bash` deny did not hide the host's `shell` tool; `action:"shell"` did. Host default permission rules were also present in the resolved agent. |
+| **V4** Agent mode | Supported values are `primary`, `subagent`, and `all`; all three appeared in `ctx.agent.list()`. | `node_modules/@opencode/schema/dist/agent.d.ts`; runtime agent list. | If no primary mode were supported, use `agents.default(id)` (available on `AgentEditor`). No deviation. |
+| **V5** Built-in edit tools / inputs | Names are `edit`, `write`, `patch`; shell tool is `shell`. Inputs: `edit` = `path`, `oldString`, `newString`, optional `replaceAll`; `write` = `path`, `content`; `patch` = `patchText`; `shell` = `command` plus optional execution settings. `gating.editTools` should default to `edit`, `write`, `patch`. | `SessionContext.tools` JSON Schemas in `session.d.ts`; runtime schemas and `execute.before` captures for edit/write/patch. `ctx.tool.list()` lists built-ins but omits their input schema. | Use tool-specific path extractors: `path` for edit/write; parse patch paths from `patchText`. SPEC's example `filePath` is wrong. If a tool schema is not exposed in a given context, keep the extractor configurable and fail conservatively. |
+| **V6** Tool hook payloads | `execute.before` and `execute.after` carry `tool`, `sessionID`, `agent`, `messageID`, `id`, and `input`. `id` is the call ID. After adds `{status:"completed",result}` or `{status:"error",error}`. | `node_modules/@opencode/plugin/dist/promise/tool.d.ts`; runtime echo/patch/error captures. | If identifiers are absent in another host version, use the single-open-run fallback and leave duration unknown. SPEC's `toolCallID` is named `id`; `assistantMessageID` is `messageID`. |
+| **V7** Context hook / system | Hook is `ctx.session.hook("context", ...)`. `system` is `SystemPart[]`, with text parts shaped `{type:"text", text}`. Appending a unique part reached the model. | `session.d.ts`; M0.2 headless token echo. | Append a structured text part; do not treat `system` as `string[]` or a plain string. |
+| **V8** Current request context | `SessionContext` exposes `sessionID`, `agent`, `model`, mutable `options`, `system`, `messages`, and `tools` (tool descriptions plus JSON Schemas). Runtime values included the current agent/model and selected tool set. | `session.d.ts`; captured context records. | Role-agnostic behavior is only needed if a future host omits `agent`; no fallback needed here. |
+| **V9** Event stream | `ctx.event.subscribe({signal, types?})` returns an async iterable. Runtime observed `session.created`, execution started/succeeded/failed, step/tool events, and `session.usage.updated`. Child `session.created.data.parentID` was present. Usage data included cost and input/output/reasoning/cache tokens. `session.idle` is in the manifest. | `event.d.ts`; `event-manifest.d.ts`; live `opencode serve` subscription and child-session probe. | Start the iterator in the background and abort it in cleanup. If events are unavailable, bind sessions from tool executor contexts and omit token/cost tracing. |
+| **V10** Tool failures | Promise tool result is `{output?, content?, metadata?}`. Returning `output:{ok:false,...}` plus text reports an expected failure; throwing `Error` or `Tool.Error` yields `execute.after.status="error"`. Throwing in `execute.before` blocks the tool and skips `execute.after`; the host stayed usable. | `node_modules/@opencode/schema/dist/tool.d.ts`; runtime result/error/block probes. | Return expected failures as `ok:false` output and readable content; reserve throws / `Tool.Error` for unexpected failures. SPEC's `{structured,content}` result shape is not this SDK's shape. |
+| **V11** `.team/` hot reload | Arbitrary `.team/` changes do not rerun plugin setup. A marker-file change produced no second setup and no `.team` watcher. | Long-running `opencode serve` experiment; setup count/log. | Re-read approved prompt data explicitly, call `ctx.agent.reload()`, or require restart. Do not depend on `.team/` file watching. |
+| **V12** Headless tests/evals | Use `opencode --standalone run --print-logs --auto ...`; `opencode serve` also worked for API access. | CLI help; successful headless M0.1 and M0.2 runs; `/api/plugin` on the initialized server. | If no model/provider is available, retain unit tests and use the API server when possible. CLI is `opencode`, not the assumed `opencode2`. |
+| **V13** Agent model format | Agent model is a `Model.Ref` object `{id, providerID, variant?}`. `Model.Ref.parse("provider/model")` produces the object; setting the object worked at runtime. | `agent.d.ts`, `model.d.ts`; runtime agent list and `Model.Ref.parse`. | Parse configured `provider/model` strings before assigning. SPEC's direct string field is not the installed type. |
+| **V14** Model params / catalog | `steps` is the step cap (not `maxSteps`). `request.body` is open but did not apply `temperature`, `topP`, or the custom `maxTokens` in the runtime request. Mutating `SessionContext.options` did: the provider request contained `temperature:0.1`, `top_p:0.9`, `max_completion_tokens:32`. `model.variant:"low"` sent `reasoning_effort:"low"`. Catalog exposes model `capabilities`, `variants.settings`, `cost`, `limit`, `status`, and provider `activation`; this run had 87 models / 2 providers. | `agent.d.ts`, `session.d.ts`, `model.d.ts`, `provider.d.ts`; captured provider request and model catalog. | Apply generation params through the context hook's `options`; map output limits to `maxTokens`, not `maxOutputTokens`. Filter by model capability and catch provider rejection: catalog said `gpt-5.4-mini` supported temperature, but its provider rejected it. The default `gpt-6.1-terra` reports `temperature:false`. Use model variants for reasoning effort. |
+| **V15** Default model access | `ctx.model.default()` is async and returned the effective host default (`openai/gpt-6.1-terra`). `ModelEditor.default.get()` is synchronous inside `ctx.model.transform`, but returned `undefined` when no explicit default override was configured. | Runtime comparison; `model.d.ts`; model API types. | Use the async API to report the effective default; treat transform getter as the explicit configured default only. |
+| **V16** Project directory | Use `ctx.location.directory`. `ctx.location.project` also had `directory` and `canonical`. `process.cwd()` differed in the active plugin host (`/Users/tamas` vs the project directory). | `plugin.d.ts`, `location.d.ts`; runtime env probe. | Use `ctx.location.directory`, not `process.cwd()` or config-file inference. |
+| **V17** Agent reload | `await ctx.agent.reload()` works; an updated discovery-agent description/step count remained after reload. | `agent.d.ts`; runtime mutation/reload/list probe. | Re-read changed prompt/model data before calling reload. If reload is unavailable in a future host, restart OpenCode. `.team/` itself is not watched (V11). |
 
-- `Plugin.define({ id: "hello", setup })` loaded from `.opencode/plugins/hello/index.ts`.
-- `ctx.tool.transform((tools) => tools.add(...))` registered `greeting`.
-- Calling `greeting` from this session returned `Hello, M0.1!`; the result carried `runtime: bun 1.4.4` and `appVersion: 2.2.0`.
-- A headless run (`opencode --standalone run ...`) loaded the plugin, called `greeting`, and the model replied with the exact tool result.
-- Setup receives `ctx.app`, `ctx.location.directory`, and `ctx.options`.
-- Cleanup runs on host unload: the headless run logged `[hello] cleanup` on `SIGTERM`.
-- Cleanup and re-setup run on configuration reload: `opencode reload` logged `cleanup` for the old setup followed by a new `setup` and `tool-registered`.
-- The plugin setup cleanup is a returned function; the unit test also verifies repeated setup and idempotent cleanup.
+## M1 decisions
 
-## Open items for M0.2
-
-- V1–V17 answers and sources.
-- Why `opencode plugin list --server ...` reports "No plugins found" while `/api/plugin` reports `hello`.
-- Tool hook event names and payloads; request/context hook; agent transform; catalog shapes.
-- SQLite driver behavior in the real plugin host.
+- Register prompt text as `system`; permissions are rule arrays and the tool set is controlled through permissions plus hooks.
+- Parse model strings into `Model.Ref`; leave the model unset for inheritance. Model transforms expose metadata, but use async `ctx.model.default()` for the effective host default.
+- Apply `temperature`, `topP`, and `maxTokens` through mutable context `options`; use model variants for reasoning settings. Capability metadata is best-effort and provider errors must be handled without failing setup.
+- Use `edit` / `write` / `patch` as source-edit tools. Extract edit/write paths from `input.path`; inspect `patchText` for patch targets.
+- Keep `execute.after` tracing and event subscription non-throwing; abort the event iterator in cleanup.
+- Resolve project-relative paths from `ctx.location.directory`. Runtime data remains outside the plugin code; M0 created no product SQLite schema.

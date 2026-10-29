@@ -8,7 +8,7 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 
 | Milestone | Theme | Size | Depends on | Status |
 |---|---|---|---|---|
-| **M0** | API discovery and hello-world proof | M | — | ◐ In progress |
+| **M0** | API discovery and hello-world proof | M | — | ☑ Done |
 | **M1** | Skeleton, agents, options, model routing | L | M0 | ☐ Not started |
 | **M2** | State machine, tools, SQLite, Stack Profile | L | M1 | ☐ Not started |
 | **M3** | Gating hooks | M | M2 | ☐ Not started |
@@ -71,7 +71,7 @@ Recommended execution is sequential. After M2, M3 and M4 can proceed in parallel
 - [x] Invoke the `greeting` tool from a session and confirm the result reaches the model.
 - [x] Verify that the setup cleanup function runs on reload/unload, and that repeated setup is safe.
 - [x] Confirm how this repo itself will be loaded during development (local path in `opencode.json`, `.opencode/plugins/` symlink, or absolute path) and document it.
-- [ ] Remove or isolate the throwaway hello plugin before M1; it is a probe, not a deliverable. (Deferred to the M0 exit gate; keep it through M0.2.)
+- [x] Remove the throwaway hello plugin and its probe test at the M0 exit gate; it is not a deliverable.
 
 ### M0.2 — Resolve every `[VERIFY]` item
 
@@ -87,30 +87,31 @@ Read the installed `.d.ts` files first; use docs and throwaway experiments only 
 
 Concrete probes to run:
 
-- [ ] Register a test subagent through `agent.transform`; inspect it in OpenCode; try prompt, permission, model, and param fields one at a time.
-- [ ] Register a tool hook, deliberately throw in `execute.before`, and confirm the tool call is blocked; inspect the full event object.
-- [ ] Register a session request/context hook; append a system instruction and confirm it reaches the model; inspect `event.system`, agent, and model fields.
-- [ ] Subscribe to the event stream; observe session creation, child-session parent IDs, completion/error, and message token/cost data if present.
-- [ ] Open a temporary SQLite database with both available drivers; verify `journal_mode=WAL`, `busy_timeout`, and foreign keys.
-- [ ] Try a headless OpenCode invocation; if it cannot be made reliable, record the stub/fallback plan for M6.
+- [x] Register a test subagent through `agent.transform`; inspect it in OpenCode; try system, permission, model, and param fields.
+- [x] Register a tool hook, deliberately throw in `execute.before`, and confirm the tool call is blocked; inspect the full event object.
+- [x] Register a session context hook; append a system instruction and confirm it reaches the model; inspect `event.system`, agent, model, options, and tools.
+- [x] Subscribe to the event stream; observe session creation, child-session parent IDs, completion/error, and token/cost data.
+- [x] Open temporary SQLite databases with both available drivers; verify `journal_mode=WAL`, `busy_timeout`, and foreign keys.
+- [x] Verify headless `opencode --standalone run` and the long-running `opencode serve` API path.
 
 ### M0.3 — Write `docs/api-notes.md`
 
-- [ ] Record the exact OpenCode version, SDK package version, runtime, and test runner.
-- [ ] Add a row for each V1–V17: question, resolved answer, source (type file / doc URL / experiment), fallback used, deviation from SPEC.
-- [ ] Record decisions that will shape later milestones: package name, hook names, tool result shape, event-tracing feasibility, headless feasibility, and the logging facility (host logger vs events table).
-- [ ] Keep the document short enough to be read before each milestone.
+- [x] Record the exact OpenCode version, SDK package version, runtime, and test runner.
+- [x] Add a row for each V1–V17: question, resolved answer, source (type file / doc URL / experiment), fallback, and deviation from SPEC.
+- [x] Record decisions that will shape later milestones: package name, hook names, tool result shape, event-tracing feasibility, headless feasibility, and logging.
+- [x] Keep the document short enough to be read before each milestone.
 
 ### M0.4 — Discovery exit gate
 
-- [ ] All V1–V17 have an answer or a documented fallback.
-- [ ] The hello-world plugin loads and its tool is callable.
-- [ ] A test agent is visible in OpenCode.
-- [ ] A tool hook can block an operation intentionally without crashing the host.
-- [ ] A request/context hook can inject a system instruction.
-- [ ] The SQLite driver opens a WAL database in the plugin runtime.
-- [ ] The package/entrypoint and runtime are pinned.
-- [ ] No unresolved item requires inventing API surface. If a contradiction has no fallback, stop and report per SPEC §15.
+- [x] All V1–V17 have an answer or a documented fallback.
+- [x] The hello-world plugin loaded and its tool was callable before probe cleanup.
+- [x] A test agent was visible in OpenCode.
+- [x] A tool hook blocked an operation intentionally without crashing the host.
+- [x] A context hook injected a system instruction.
+- [x] SQLite opened a WAL database in the plugin runtime.
+- [x] The package/entrypoint and runtime are pinned.
+- [x] No unresolved item requires inventing API surface; contradictions have documented fallbacks.
+- [x] Remove the temporary discovery and hello plugins and the hello-only test; retain only the installed-API contract test, with no product implementation or loaded probe code.
 
 **Suggested commits:** `chore: scaffold plugin project` → `test: prove v2 plugin loading` → `docs: record v2 api findings`.
 
