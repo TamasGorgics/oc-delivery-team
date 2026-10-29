@@ -8,7 +8,7 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 
 | Milestone | Theme | Size | Depends on | Status |
 |---|---|---|---|---|
-| **M0** | API discovery and hello-world proof | M | — | ☐ Not started |
+| **M0** | API discovery and hello-world proof | M | — | ◐ In progress |
 | **M1** | Skeleton, agents, options, model routing | L | M0 | ☐ Not started |
 | **M2** | State machine, tools, SQLite, Stack Profile | L | M1 | ☐ Not started |
 | **M3** | Gating hooks | M | M2 | ☐ Not started |
@@ -63,15 +63,15 @@ Recommended execution is sequential. After M2, M3 and M4 can proceed in parallel
 
 ### M0.1 — Scaffold and prove plugin loading
 
-- [ ] Create `package.json` (`type: "module"`, scripts for typecheck/test), strict `tsconfig.json`, and `.gitignore` (`.team/team.db*`, build output, local caches).
-- [ ] Determine the installed OpenCode release and the plugin package it resolves. Install the SDK/types package at the exact version; pin it in `package.json`.
-- [ ] Choose the host runtime and test runner: Bun + `bun test` by default; Node ≥ 22 + `vitest` if the host is Node. Record the decision in `docs/api-notes.md`.
-- [ ] Create a throwaway `.opencode/plugins/hello/index.ts` exporting `Plugin.define({ id: "hello", setup })` with a `greeting` tool that returns a text result.
-- [ ] Load it in OpenCode and verify the plugin is active (via `/api/plugin` or the equivalent endpoint for the installed release).
-- [ ] Invoke the `greeting` tool from a session and confirm the result reaches the model.
-- [ ] Verify that the setup cleanup function runs on reload/unload, and that repeated setup is safe.
-- [ ] Confirm how this repo itself will be loaded during development (local path in `opencode.json`, `.opencode/plugins/` symlink, or absolute path) and document it.
-- [ ] Remove or isolate the throwaway hello plugin before M1; it is a probe, not a deliverable.
+- [x] Create `package.json` (`type: "module"`, scripts for typecheck/test), strict `tsconfig.json`, and `.gitignore` (`.team/team.db*`, build output, local caches).
+- [x] Determine the installed OpenCode release and the plugin package it resolves. Install the SDK/types package at the exact version; pin it in `package.json`.
+- [x] Choose the host runtime and test runner: Bun + `bun test` by default; Node ≥ 22 + `vitest` if the host is Node. Record the decision in `docs/api-notes.md`.
+- [x] Create a throwaway `.opencode/plugins/hello/index.ts` exporting `Plugin.define({ id: "hello", setup })` with a `greeting` tool that returns a text result.
+- [x] Load it in OpenCode and verify the plugin is active (via `/api/plugin` or the equivalent endpoint for the installed release).
+- [x] Invoke the `greeting` tool from a session and confirm the result reaches the model.
+- [x] Verify that the setup cleanup function runs on reload/unload, and that repeated setup is safe.
+- [x] Confirm how this repo itself will be loaded during development (local path in `opencode.json`, `.opencode/plugins/` symlink, or absolute path) and document it.
+- [ ] Remove or isolate the throwaway hello plugin before M1; it is a probe, not a deliverable. (Deferred to the M0 exit gate; keep it through M0.2.)
 
 ### M0.2 — Resolve every `[VERIFY]` item
 

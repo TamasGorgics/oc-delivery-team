@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+.team/team.db*
+*.tsbuildinfo
+.DS_Store
+*.log
