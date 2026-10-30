@@ -48,6 +48,24 @@ export interface FakeContextEvent {
   readonly options: Record<string, unknown>;
 }
 
+export interface FakeToolBeforeEvent {
+  readonly tool: string;
+  readonly sessionID: string;
+  readonly agent: string;
+  readonly messageID: string;
+  readonly id: string;
+  readonly input: unknown;
+}
+
+export interface FakeToolBeforeInvocation {
+  readonly tool: string;
+  readonly input?: unknown;
+  readonly sessionID?: string;
+  readonly agent?: string;
+  readonly messageID?: string;
+  readonly id?: string;
+}
+
 export interface FakeContextHarness {
   readonly context: PluginContext;
   readonly state: {
@@ -59,6 +77,7 @@ export interface FakeContextHarness {
     readonly actions: string[];
     readonly agentTransforms: Array<(editor: AgentEditor) => void>;
     readonly toolTransforms: Array<(editor: ToolEditor) => void>;
+    readonly toolBeforeHooks: Array<(event: FakeToolBeforeEvent) => void | Promise<void>>;
     contextHook?: (event: FakeContextEvent) => void | Promise<void>;
     reloadCount: number;
     commandReloadCount: number;
@@ -67,6 +86,7 @@ export interface FakeContextHarness {
   replayAgentTransforms(): void;
   invokeCommand(name: string, text?: string): Promise<void>;
   invokeTool(name: string, input: unknown, context?: Partial<FakeToolCallContext>): Promise<{ output?: unknown; content?: unknown }>;
+  invokeToolBefore(event: FakeToolBeforeInvocation): Promise<void>;
   invokeContextHook(agent: string, options?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
@@ -108,6 +128,7 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
   const actions: string[] = [];
   const agentTransforms: Array<(editor: AgentEditor) => void> = [];
   const toolTransforms: Array<(editor: ToolEditor) => void> = [];
+  const toolBeforeHooks: Array<(event: FakeToolBeforeEvent) => void | Promise<void>> = [];
   const state: FakeContextHarness["state"] = {
     agents,
     commands,
@@ -117,6 +138,7 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
     actions,
     agentTransforms,
     toolTransforms,
+    toolBeforeHooks,
     contextHook: undefined,
     reloadCount: 0,
     commandReloadCount: 0,
@@ -220,7 +242,17 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
       reload: async (): Promise<void> => {
         state.toolReloadCount += 1;
       },
-      hook: async (): Promise<Registration> => registration(() => {}),
+      hook: async (
+        name: string,
+        handler: (event: FakeToolBeforeEvent) => void | Promise<void>,
+      ): Promise<Registration> => {
+        if (name !== "execute.before") throw new Error(`Unsupported fake tool hook: ${name}`);
+        toolBeforeHooks.push(handler);
+        return registration(() => {
+          const index = toolBeforeHooks.indexOf(handler);
+          if (index >= 0) toolBeforeHooks.splice(index, 1);
+        });
+      },
     },
     model: {
       list: async () => {
@@ -284,6 +316,17 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
         progress: async () => {},
       } as unknown as ToolContext;
       return tool.execute(input, toolContext) as Promise<{ output?: unknown; content?: unknown }>;
+    },
+    async invokeToolBefore(event) {
+      const resolved: FakeToolBeforeEvent = {
+        tool: event.tool,
+        sessionID: event.sessionID ?? "session-1",
+        agent: event.agent ?? "team-lead",
+        messageID: event.messageID ?? "message-1",
+        id: event.id ?? "call-1",
+        input: event.input ?? {},
+      };
+      for (const hook of [...toolBeforeHooks]) await hook(resolved);
     },
     async invokeContextHook(agent, options = {}) {
       const event: FakeContextEvent = { agent, options };

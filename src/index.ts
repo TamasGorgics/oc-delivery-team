@@ -14,6 +14,7 @@ import {
 } from "./compat";
 import { registerCommands } from "./commands";
 import { parseConfig, type ConfigWarning, type DeliveryTeamConfig } from "./config";
+import { registerGate } from "./hooks/gate";
 import { resolveModels, type ModelResolution } from "./models";
 import { getDefaultPrompt } from "./prompts";
 import {
@@ -152,6 +153,15 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
       toolNames = [...toolRegistration.names];
     } catch (error) {
       setupWarnings.push(`tool.registration: ${errorMessage(error)}`);
+    }
+
+    if (config.gating.enabled) {
+      try {
+        const gateRegistration = await registerGate(context, runtime);
+        disposers.push(gateRegistration.dispose);
+      } catch (error) {
+        setupWarnings.push(`gate.registration: ${errorMessage(error)}`);
+      }
     }
 
     if (hasRequestOptions(modelResolution)) {

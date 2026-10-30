@@ -240,6 +240,13 @@ export class RunRepository {
     );
   }
 
+  hasEvent(runId: string, kind: string): boolean {
+    return this.db.get<{ found: number }>(
+      "SELECT 1 AS found FROM events WHERE run_id = ? AND kind = ? LIMIT 1",
+      [runId, kind],
+    ) !== undefined;
+  }
+
   upsertSession(input: {
     readonly id: string;
     readonly parentId?: string | null;
@@ -324,6 +331,47 @@ export class RunRepository {
       source: row.source,
     }));
   }
+}
+
+export type SessionRunResolution =
+  | { readonly ok: true; readonly run: RunRow; readonly singleOpen: boolean }
+  | { readonly ok: false; readonly code: "run_not_found" | "run_ambiguous"; readonly message: string };
+
+/**
+ * Resolve a run from a session without mutating the session. Tools may bind the
+ * returned single-open run, but the gate stays read-only.
+ */
+export function resolveSessionRun(runs: RunRepository, sessionId: string): SessionRunResolution {
+  const session = runs.getSession(sessionId);
+  if (session?.run_id) {
+    const run = runs.getRun(session.run_id);
+    if (run) return { ok: true, run, singleOpen: false };
+  }
+
+  if (session?.parent_id) {
+    const parent = runs.getSession(session.parent_id);
+    if (parent?.run_id) {
+      const run = runs.getRun(parent.run_id);
+      if (run) return { ok: true, run, singleOpen: false };
+    }
+  }
+
+  const open = runs.listOpenRuns();
+  if (open.length === 1) {
+    return { ok: true, run: open[0] as RunRow, singleOpen: true };
+  }
+  if (open.length > 1) {
+    return {
+      ok: false,
+      code: "run_ambiguous",
+      message: `Multiple open runs found (${open.map((run) => run.id).join(", ")}). Pass the run id explicitly.`,
+    };
+  }
+  return {
+    ok: false,
+    code: "run_not_found",
+    message: "No open delivery-team run was found. Call team_start first or pass a run id.",
+  };
 }
 
 export function parseJsonRecord(value: string | null | undefined): Record<string, unknown> {

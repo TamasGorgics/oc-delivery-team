@@ -135,6 +135,97 @@ export function roleIdFromAgent(agent: unknown): RoleId | undefined {
   return String(agent) as RoleId;
 }
 
+const DEFAULT_PATH_KEYS: Readonly<Record<string, string>> = {
+  edit: "path",
+  write: "path",
+};
+const SHELL_TOOLS = new Set(["shell", "bash"]);
+
+export interface EditedPathExtraction {
+  readonly paths: readonly string[];
+  readonly complete: boolean;
+  readonly reason?: string;
+}
+
+/**
+ * Extract every target path from an edit-like tool call. The installed host
+ * uses `path` for edit/write and a Codex-style patch in `patchText`; an
+ * optional `gating.pathKeys` map keeps the extractor adaptable to host changes.
+ */
+export function extractEditedPaths(
+  tool: string,
+  input: unknown,
+  pathKeys: Readonly<Record<string, string>> = {},
+): EditedPathExtraction {
+  const record = toolInputObject(input);
+  const override = pathKeys[tool]?.trim();
+
+  if (tool === "patch" && !override) {
+    const patchText = record.patchText;
+    if (typeof patchText !== "string" || patchText.trim().length === 0) {
+      return {
+        paths: [],
+        complete: false,
+        reason: "patchText must contain *** Add File, *** Update File, or *** Delete File headers.",
+      };
+    }
+    const paths = extractPatchPaths(patchText);
+    return {
+      paths,
+      complete: paths.length > 0,
+      ...(paths.length > 0
+        ? {}
+        : { reason: "No *** Add File, *** Update File, or *** Delete File path was found in patchText." }),
+    };
+  }
+
+  const preferred = override ?? DEFAULT_PATH_KEYS[tool];
+  if (preferred) {
+    const value = record[preferred];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return { paths: [value.trim()], complete: true };
+    }
+    if (override) {
+      return { paths: [], complete: false, reason: `Input key '${preferred}' is missing or empty.` };
+    }
+  }
+
+  return {
+    paths: [],
+    complete: false,
+    reason: `No path input was found for '${tool}'. Use 'path' for edit/write, or configure gating.pathKeys for this tool.`,
+  };
+}
+
+export function extractPatchPaths(patchText: string): string[] {
+  const paths: string[] = [];
+  const header = /^\s*\*\*\* (?:Add|Update|Delete) File:\s*(.+?)\s*$/gm;
+  const move = /^\s*\*\*\* Move to:\s*(.+?)\s*$/gm;
+  for (const match of patchText.matchAll(header)) {
+    const value = match[1]?.trim();
+    if (value) paths.push(value);
+  }
+  for (const match of patchText.matchAll(move)) {
+    const value = match[1]?.trim();
+    if (value) paths.push(value);
+  }
+  return [...new Set(paths)];
+}
+
+export function isShellTool(tool: string): boolean {
+  return SHELL_TOOLS.has(tool);
+}
+
+export function extractShellCommand(tool: string, input: unknown): string | undefined {
+  if (!isShellTool(tool)) return undefined;
+  const record = toolInputObject(input);
+  for (const key of ["command", "cmd"] as const) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim().length > 0) return value;
+  }
+  return undefined;
+}
+
 /**
  * AgentEditor has no `add` method. M0 verified that `update` creates a missing
  * agent in the installed host, so all agent upserts go through this adapter.

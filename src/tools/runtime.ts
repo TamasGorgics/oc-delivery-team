@@ -12,7 +12,7 @@ import type { DeliveryTeamConfig } from "../config";
 import type { ModelResolutionSnapshot } from "../models";
 import type { TeamDatabase } from "../state/db";
 import type { LessonsRepository } from "../state/lessons";
-import type { RunRow, RunRepository } from "../state/runs";
+import { resolveSessionRun, type RunRow, type RunRepository } from "../state/runs";
 import type { Tracer } from "../state/trace";
 
 export interface ToolRuntime {
@@ -126,38 +126,17 @@ export function resolveRun(
     return { ok: true, run };
   }
 
-  const session = runs.getSession(sessionId);
-  if (session?.run_id) {
-    const run = runs.getRun(session.run_id);
-    if (run) return { ok: true, run };
+  const resolution = resolveSessionRun(runs, sessionId);
+  if (!resolution.ok) {
+    return { ok: false, code: resolution.code, message: resolution.message };
   }
 
-  if (session?.parent_id) {
-    const parent = runs.getSession(session.parent_id);
-    if (parent?.run_id) {
-      const run = runs.getRun(parent.run_id);
-      if (run) return { ok: true, run };
-    }
-  }
-
-  const open = runs.listOpenRuns();
-  if (open.length === 1) {
-    const run = open[0] as RunRow;
+  const run = resolution.run;
+  if (resolution.singleOpen) {
+    const session = runs.getSession(sessionId);
     if (session && !session.run_id) runs.bindSession(sessionId, run.id, session.agent);
-    return { ok: true, run };
   }
-  if (open.length > 1) {
-    return {
-      ok: false,
-      code: "run_ambiguous",
-      message: `Multiple open runs found (${open.map((run) => run.id).join(", ")}). Pass the run id explicitly.`,
-    };
-  }
-  return {
-    ok: false,
-    code: "run_not_found",
-    message: "No open delivery-team run was found. Call team_start first or pass a run id.",
-  };
+  return { ok: true, run };
 }
 
 export function objectSchema(

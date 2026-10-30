@@ -11,7 +11,7 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 | **M0** | API discovery and hello-world proof | M | — | ☑ Done |
 | **M1** | Skeleton, agents, options, model routing | L | M0 | ☑ Done |
 | **M2** | State machine, tools, SQLite, Stack Profile | L | M1 | ☑ Done |
-| **M3** | Gating hooks | M | M2 | ☐ Not started |
+| **M3** | Gating hooks | M | M2 | ☑ Done |
 | **M4** | Observability: tracing, events, CLI reports | M | M2, M3 | ☐ Not started |
 | **M5** | Learning loop: lessons, prompt proposals, approvals | L | M2, M4 | ☐ Not started |
 | **M6** | Parallel worktrees and eval harness (optional flag) | L | M2, M4 | ☐ Not started |
@@ -272,28 +272,28 @@ Concrete probes to run:
 
 ### Work
 
-- [ ] Register the gate only when `gating.enabled` is true.
-- [ ] Always write a non-blocking `tool.before` trace; never let trace errors escape.
-- [ ] Implement the edit gate: if the tool is in `gating.editTools` and the run’s phase is before `implement`, block edits outside `<root>/` with the documented message.
-- [ ] Make the edit-tool set and input-path key extractor configurable, with the verified defaults; unknown shapes go through `compat.ts`.
-- [ ] Implement the scope gate from the run’s Stack Profile globs: `tester` only `globs.tests`, `docs` only `globs.docs`, `spec`/`retro` only under `<root>/`.
-- [ ] Use cross-language default globs when the profile has none and trace `gate.scope_default`.
-- [ ] If the event lacks an agent name, skip the scope gate and trace `gate.scope_skipped` once per run; rely on permissions and prompts.
-- [ ] Block `bash`/shell commands containing `team lessons approve` or `team prompts approve`; resolve the actual shell tool name and input key via M0 (V5).
-- [ ] Enforce unresolved-run policy: `gating.strict=true` throws; `false` allows and traces `gate.unresolved`.
-- [ ] Keep loop caps in `team_loop` / `team_rewind`, not in the gate.
-- [ ] Make every denial message actionable: state the phase, the rule, and the next tool call.
-- [ ] Ensure only intentional denials throw; all other gate errors are caught and traced.
+- [x] Register the gate only when `gating.enabled` is true.
+- [x] Always write a non-blocking `tool.before` trace; never let trace errors escape.
+- [x] Implement the edit gate: if the tool is in `gating.editTools` and the run’s phase is before `implement`, block edits outside `<root>/` with the documented message.
+- [x] Make the edit-tool set and input-path key extractor configurable, with the verified defaults; unknown shapes go through `compat.ts`.
+- [x] Implement the scope gate from the run’s Stack Profile globs: `tester` only `globs.tests`, `docs` only `globs.docs`, `spec`/`retro` only under `<root>/`.
+- [x] Use cross-language default globs when the profile has none and trace `gate.scope_default`.
+- [x] If the event lacks an agent name, skip the scope gate and trace `gate.scope_skipped` once per run; rely on permissions and prompts.
+- [x] Block `bash`/shell commands containing `team lessons approve` or `team prompts approve`; resolve the actual shell tool name and input key via M0 (V5).
+- [x] Enforce unresolved-run policy: `gating.strict=true` throws; `false` allows and traces `gate.unresolved`.
+- [x] Keep loop caps in `team_loop` / `team_rewind`, not in the gate.
+- [x] Make every denial message actionable: state the phase, the rule, and the next tool call.
+- [x] Ensure only intentional denials throw; all other gate errors are caught and traced.
 
 ### Acceptance
 
-- [ ] Editing a source file during `spec` is blocked with the documented message.
-- [ ] Editing a source file during `implement` is allowed.
-- [ ] Paths under `<root>/` are always allowed.
-- [ ] `tester` cannot edit source, only test globs; `docs` cannot edit source; defaults apply when globs are missing.
-- [ ] `gating.strict` behavior is verified for unresolved runs.
-- [ ] The CLI-approval bypass is blocked.
-- [ ] Gate tests cover each branch and both configured and default scopes.
+- [x] Editing a source file during `spec` is blocked with the documented message.
+- [x] Editing a source file during `implement` is allowed.
+- [x] Paths under `<root>/` are always allowed.
+- [x] `tester` cannot edit source, only test globs; `docs` cannot edit source; defaults apply when globs are missing.
+- [x] `gating.strict` behavior is verified for unresolved runs.
+- [x] The CLI-approval bypass is blocked.
+- [x] Gate tests cover each branch and both configured and default scopes.
 
 **Suggested commits:** `feat: add phase and scope gate` → `test: cover gate decisions` → `feat: block CLI approval bypass`.
 

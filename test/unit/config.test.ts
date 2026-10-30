@@ -12,7 +12,12 @@ describe("plugin configuration", () => {
     expect(config.lessons).toEqual({ topN: 8, budgetChars: 4000 });
     expect(config.stack).toEqual({ detect: true, overrides: undefined });
     expect(config.roles.disabled).toEqual([]);
-    expect(config.gating).toEqual({ enabled: true, strict: false, editTools: ["edit", "write", "patch"] });
+    expect(config.gating).toEqual({
+      enabled: true,
+      strict: false,
+      editTools: ["edit", "write", "patch"],
+      pathKeys: {},
+    });
     expect(config.trace).toEqual({ captureInput: false, previewChars: 0 });
     expect(config.worktrees).toEqual({ enabled: false, baseDir: "../.team-worktrees" });
     expect(config.models).toEqual({
@@ -55,7 +60,7 @@ describe("plugin configuration", () => {
     expect(config.lessons).toEqual({ topN: 4, budgetChars: 2500 });
     expect(config.stack).toEqual({ detect: false, overrides: { version: 1 } });
     expect(config.roles.disabled).toEqual(["docs", "retro"]);
-    expect(config.gating).toEqual({ enabled: false, strict: true, editTools: [] });
+    expect(config.gating).toEqual({ enabled: false, strict: true, editTools: [], pathKeys: {} });
     expect(config.trace).toEqual({ captureInput: true, previewChars: 120 });
     expect(config.worktrees).toEqual({ enabled: true, baseDir: "../worktrees" });
     expect(config.models.default).toEqual({
@@ -70,6 +75,26 @@ describe("plugin configuration", () => {
     expect(config.models.diversity).toBe(false);
     expect(config.models.auto).toBe(true);
     expect(config.warnings).toEqual([]);
+  });
+
+  test("accepts configurable edit-tool path keys and warns on invalid entries", () => {
+    const config = parseConfig({
+      gating: {
+        editTools: ["apply"],
+        pathKeys: { apply: " target ", empty: "  ", invalid: 7 },
+      },
+    }, "/workspace/project");
+
+    expect(config.gating.editTools).toEqual(["apply"]);
+    expect(config.gating.pathKeys).toEqual({ apply: "target" });
+    expect(config.warnings).toContainEqual({
+      path: "gating.pathKeys.empty",
+      message: "Must be a non-empty string; ignored.",
+    });
+    expect(config.warnings).toContainEqual({
+      path: "gating.pathKeys.invalid",
+      message: "Must be a non-empty string; ignored.",
+    });
   });
 
   test("warns and defaults invalid values instead of throwing", () => {

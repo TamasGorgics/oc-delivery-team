@@ -336,6 +336,13 @@ describe("run repositories", () => {
 
       runs.addNote({ runId: "run-1", kind: "finding", text: "latest" });
       expect(runs.latestEvent("missing")).toBeUndefined();
+      db.run(
+        "INSERT INTO events (run_id, at, kind, data_json) VALUES (?, 'now', 'gate.scope_default', '{}')",
+        ["run-1"],
+      );
+      expect(runs.hasEvent("run-1", "gate.scope_default")).toBe(true);
+      expect(runs.hasEvent("run-1", "gate.scope_skipped")).toBe(false);
+      expect(runs.hasEvent("other-run", "gate.scope_default")).toBe(false);
     } finally {
       db.close();
     }

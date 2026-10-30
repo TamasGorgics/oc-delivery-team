@@ -47,6 +47,8 @@ export interface GatingConfig {
   readonly enabled: boolean;
   readonly strict: boolean;
   readonly editTools: readonly string[];
+  /** Optional tool -> input key override for path extraction. */
+  readonly pathKeys: Readonly<Record<string, string>>;
 }
 
 export interface TraceConfig {
@@ -91,7 +93,7 @@ const TOP_LEVEL_KEYS = new Set([
 const LESSONS_KEYS = new Set(["topN", "budgetChars"]);
 const STACK_KEYS = new Set(["detect", "overrides"]);
 const ROLES_KEYS = new Set(["disabled"]);
-const GATING_KEYS = new Set(["enabled", "strict", "editTools"]);
+const GATING_KEYS = new Set(["enabled", "strict", "editTools", "pathKeys"]);
 const TRACE_KEYS = new Set(["captureInput", "previewChars"]);
 const WORKTREES_KEYS = new Set(["enabled", "baseDir"]);
 const MODEL_KEYS = new Set(["default", "tiers", "roles", "roleTier", "params", "diversity", "auto"]);
@@ -148,6 +150,7 @@ export function parseConfig(
     enabled: readBoolean(gatingRaw.enabled, true, "gating.enabled", warnings),
     strict: readBoolean(gatingRaw.strict, false, "gating.strict", warnings),
     editTools: readStringList(gatingRaw.editTools, ["edit", "write", "patch"], "gating.editTools", warnings),
+    pathKeys: readStringMap(gatingRaw.pathKeys, "gating.pathKeys", warnings),
   };
 
   const traceRaw = readObject(options.trace, "trace", warnings);
@@ -389,6 +392,28 @@ function readStringList(
     return result.length > 0 ? result.map((entry) => entry.trim()) : [...fallback];
   }
   return result.map((entry) => entry.trim());
+}
+
+function readStringMap(
+  raw: unknown,
+  at: string,
+  warnings: ConfigWarning[],
+): Record<string, string> {
+  if (raw === undefined) return {};
+  if (!isRecord(raw)) {
+    warnings.push({ path: at, message: "Must be an object mapping tool names to input keys; ignored." });
+    return {};
+  }
+
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      result[key] = value.trim();
+    } else {
+      warnings.push({ path: `${at}.${key}`, message: "Must be a non-empty string; ignored." });
+    }
+  }
+  return result;
 }
 
 function warnUnknown(
