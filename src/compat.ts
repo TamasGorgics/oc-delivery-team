@@ -1,8 +1,9 @@
 import { Model } from "@opencode/plugin";
 import type { AgentEditor } from "@opencode/plugin/promise/agent";
 import type { Context } from "@opencode/plugin/promise/plugin";
+import type { Info as PromiseToolInfo, Result as PromiseToolResult, ToolContext } from "@opencode/plugin/promise/tool";
 import type { Agent } from "@opencode/schema/agent";
-import type { Types } from "effect";
+import type { JsonSchema, Types } from "effect";
 import { isRoleId, type RoleId } from "./roles";
 
 export type PluginContext = Context;
@@ -144,6 +145,59 @@ export function upsertAgent(
   update: (draft: AgentDraft) => void,
 ): void {
   editor.update(id, update);
+}
+
+/**
+ * Tool definitions use plain JSON Schema so `additionalProperties: false` is
+ * explicit. The SDK's generic input/output inference is intentionally kept at
+ * this boundary; executors receive the validated object as their typed input.
+ */
+export interface ToolSpec<I> {
+  readonly name: string;
+  readonly description: string;
+  readonly input: JsonSchema.JsonSchema;
+  readonly output?: JsonSchema.JsonSchema;
+  readonly execute: (input: I, context: ToolContext) => Promise<PromiseToolResult>;
+}
+
+/** Every team tool returns a structured object with an `ok` discriminator. */
+export const TEAM_TOOL_OUTPUT: JsonSchema.JsonSchema = {
+  type: "object",
+  properties: { ok: { type: "boolean" } },
+  required: ["ok"],
+  additionalProperties: true,
+};
+
+export function defineTool<I>(spec: ToolSpec<I>): PromiseToolInfo {
+  return spec as unknown as PromiseToolInfo;
+}
+
+export function toolResponse(
+  payload: Record<string, unknown>,
+  text: string,
+): PromiseToolResult {
+  return {
+    output: payload,
+    content: [{ type: "text", text }],
+  };
+}
+
+export function toolInputObject(input: unknown): Record<string, unknown> {
+  return typeof input === "object" && input !== null && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : {};
+}
+
+export function toolContextIdentity(context: ToolContext): {
+  readonly sessionId: string;
+  readonly agent: string;
+  readonly toolCallId: string;
+} {
+  return {
+    sessionId: String(context.sessionID),
+    agent: String(context.agent),
+    toolCallId: String(context.id),
+  };
 }
 
 function toCatalogModel(model: ClientModel): CatalogModel {

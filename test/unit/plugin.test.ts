@@ -14,7 +14,7 @@ afterEach(() => {
 
 describe("delivery-team plugin registration", () => {
   test("exports the expected plugin id and registers all roles and commands", async () => {
-    const fake = createFakeContext();
+    const fake = createFakeContext({ projectDirectory: tempProject() });
     const cleanup = await deliveryTeam.setup(fake.context);
     assertCleanup(cleanup);
 
@@ -38,7 +38,7 @@ describe("delivery-team plugin registration", () => {
   });
 
   test("respects disabled roles and remains idempotent for repeated setup", async () => {
-    const fake = createFakeContext({ options: { roles: { disabled: ["docs", "qa"] } } });
+    const fake = createFakeContext({ projectDirectory: tempProject(), options: { roles: { disabled: ["docs", "qa"] } } });
     const [cleanupA, cleanupB] = await Promise.all([
       deliveryTeam.setup(fake.context),
       deliveryTeam.setup(fake.context),
@@ -62,6 +62,7 @@ describe("delivery-team plugin registration", () => {
 
   test("applies configured models, variants, steps, and context request parameters", async () => {
     const fake = createFakeContext({
+      projectDirectory: tempProject(),
       options: {
         models: {
           roles: {
@@ -126,6 +127,7 @@ describe("delivery-team plugin registration", () => {
 
   test("bad model references do not fail setup", async () => {
     const fake = createFakeContext({
+      projectDirectory: tempProject(),
       options: { models: { roles: { developer: "not-a-model-reference" } } },
     });
 
@@ -138,6 +140,12 @@ describe("delivery-team plugin registration", () => {
     await cleanup();
   });
 });
+
+function tempProject(): string {
+  const directory = mkdtempSync(path.join(os.tmpdir(), "delivery-team-plugin-"));
+  temporaryDirectories.push(directory);
+  return directory;
+}
 
 function assertCleanup(value: unknown): asserts value is () => Promise<void> {
   if (typeof value !== "function") throw new Error("Expected plugin setup to return a cleanup function.");

@@ -8,7 +8,8 @@
   "packageManager": "bun@1.4.4",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "team": "bun src/cli/team.ts"
   },
   "dependencies": {
     "@opencode/plugin": "2.2.0"

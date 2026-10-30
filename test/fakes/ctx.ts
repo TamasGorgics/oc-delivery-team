@@ -1,6 +1,7 @@
 import type { AgentEditor } from "@opencode/plugin/promise/agent";
 import type { CommandDefinition } from "@opencode/plugin/promise/command";
 import type { Registration } from "@opencode/plugin/promise/registration";
+import type { Info as ToolInfo, ToolContext, ToolEditor } from "@opencode/plugin/promise/tool";
 import type { AgentDraft, PluginContext } from "../../src/compat";
 
 export interface FakeModelInfo {
@@ -52,17 +53,28 @@ export interface FakeContextHarness {
   readonly state: {
     readonly agents: Map<string, AgentDraft>;
     readonly commands: Map<string, CommandDefinition>;
-  readonly prompts: FakePromptCall[];
-  readonly switchedAgents: Array<{ sessionID: string; agent: string }>;
-  readonly actions: string[];
-  readonly agentTransforms: Array<(editor: AgentEditor) => void>;
+    readonly tools: Map<string, ToolInfo & { readonly id: string }>;
+    readonly prompts: FakePromptCall[];
+    readonly switchedAgents: Array<{ sessionID: string; agent: string }>;
+    readonly actions: string[];
+    readonly agentTransforms: Array<(editor: AgentEditor) => void>;
+    readonly toolTransforms: Array<(editor: ToolEditor) => void>;
     contextHook?: (event: FakeContextEvent) => void | Promise<void>;
     reloadCount: number;
     commandReloadCount: number;
+    toolReloadCount: number;
   };
   replayAgentTransforms(): void;
   invokeCommand(name: string, text?: string): Promise<void>;
+  invokeTool(name: string, input: unknown, context?: Partial<FakeToolCallContext>): Promise<{ output?: unknown; content?: unknown }>;
   invokeContextHook(agent: string, options?: Record<string, unknown>): Promise<Record<string, unknown>>;
+}
+
+export interface FakeToolCallContext {
+  readonly sessionID: string;
+  readonly agent: string;
+  readonly messageID: string;
+  readonly id: string;
 }
 
 export function fakeModel(
@@ -90,20 +102,25 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
 
   const agents = new Map<string, AgentDraft>();
   const commands = new Map<string, CommandDefinition>();
+  const tools = new Map<string, ToolInfo & { readonly id: string }>();
   const prompts: FakePromptCall[] = [];
   const switchedAgents: Array<{ sessionID: string; agent: string }> = [];
   const actions: string[] = [];
   const agentTransforms: Array<(editor: AgentEditor) => void> = [];
+  const toolTransforms: Array<(editor: ToolEditor) => void> = [];
   const state: FakeContextHarness["state"] = {
     agents,
     commands,
+    tools,
     prompts,
     switchedAgents,
     actions,
     agentTransforms,
+    toolTransforms,
     contextHook: undefined,
     reloadCount: 0,
     commandReloadCount: 0,
+    toolReloadCount: 0,
   };
 
   const editor: AgentEditor = {
@@ -170,6 +187,41 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
         });
       },
     },
+    tool: {
+      transform: async (transform: (editor: ToolEditor) => void): Promise<Registration> => {
+        toolTransforms.push(transform);
+        const added: string[] = [];
+        const editor: ToolEditor = {
+          list: () => [...tools.values()],
+          get: (id) => tools.get(id),
+          namespace: () => {},
+          add: (tool) => {
+            tools.set(tool.name, { ...tool, id: tool.name });
+            added.push(tool.name);
+          },
+          update: (id, update) => {
+            const tool = tools.get(id);
+            if (tool) update(tool as never);
+          },
+          remove: (id) => {
+            tools.delete(id);
+          },
+        };
+        transform(editor);
+        return {
+          dispose: async () => {
+            for (const name of added) tools.delete(name);
+            const index = toolTransforms.indexOf(transform);
+            if (index >= 0) toolTransforms.splice(index, 1);
+          },
+        };
+      },
+      list: async () => [...tools.values()],
+      reload: async (): Promise<void> => {
+        state.toolReloadCount += 1;
+      },
+      hook: async (): Promise<Registration> => registration(() => {}),
+    },
     model: {
       list: async () => {
         if (options.modelListError) throw options.modelListError;
@@ -219,6 +271,19 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
         delivery: "steer",
       } as unknown as Parameters<CommandDefinition["execute"]>[0];
       await command.execute(invocation);
+    },
+    async invokeTool(name, input, context = {}) {
+      const tool = tools.get(name);
+      if (!tool) throw new Error(`Tool '${name}' is not registered.`);
+      const toolContext = {
+        sessionID: context.sessionID ?? "session-1",
+        agent: context.agent ?? "team-lead",
+        messageID: context.messageID ?? "message-1",
+        id: context.id ?? "call-1",
+        signal: new AbortController().signal,
+        progress: async () => {},
+      } as unknown as ToolContext;
+      return tool.execute(input, toolContext) as Promise<{ output?: unknown; content?: unknown }>;
     },
     async invokeContextHook(agent, options = {}) {
       const event: FakeContextEvent = { agent, options };

@@ -23,12 +23,26 @@ import {
   type RoleDefinition,
   type RoleId,
 } from "./roles";
+import { openDatabase, type TeamDatabase } from "./state/db";
+import { LessonsRepository } from "./state/lessons";
+import { resolveMainRepoDirectory } from "./state/paths";
+import { RunRepository } from "./state/runs";
+import { Tracer } from "./state/trace";
+import { registerTools, type ToolRuntime } from "./tools/runtime";
 
 export interface DeliveryTeamSnapshot {
   readonly configWarnings: readonly ConfigWarning[];
   readonly setupWarnings: readonly string[];
   readonly commands: readonly string[];
+  readonly tools: readonly string[];
   readonly models: ModelResolution["snapshot"];
+  readonly database: {
+    readonly path: string;
+    readonly driver: string | null;
+    readonly status: "ready" | "unavailable";
+    readonly error?: string;
+    readonly schemaVersion?: number;
+  };
 }
 
 const activeSetups = new WeakMap<PluginContext, Promise<() => Promise<void>>>();
@@ -61,14 +75,53 @@ async function setupDeliveryTeam(context: PluginContext): Promise<() => Promise<
 }
 
 async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
-  const config = parseConfig(pluginOptions(context), projectDirectory(context));
+  const projectDir = projectDirectory(context);
+  const mainRepoDir = resolveMainRepoDirectory(projectDir);
+  const config = parseConfig(pluginOptions(context), projectDir, mainRepoDir);
   const setupWarnings: string[] = [];
   const catalog = await readModelCatalog(context);
   const modelResolution = resolveModels(config.models, catalog, config.roles.disabled);
   const disposers: Array<() => Promise<void>> = [];
   let commandNames: string[] = [];
+  let toolNames: string[] = [];
+  let db: TeamDatabase | null = null;
+  let dbError: string | undefined;
+  let schemaVersion: number | undefined;
 
   try {
+    try {
+      const opened = await openDatabase(config.dbPath);
+      db = opened.db;
+      schemaVersion = opened.migration.toVersion;
+    } catch (error) {
+      dbError = errorMessage(error);
+      setupWarnings.push(`database.open: ${dbError}`);
+    }
+
+    const tracer = new Tracer(db, undefined, (traceError) => {
+      if (setupWarnings.length < 50) {
+        setupWarnings.push(`trace.${traceError.operation}: ${traceError.message}`);
+      }
+    });
+    const runs = db ? new RunRepository(db) : null;
+    const lessons = db ? new LessonsRepository(db) : null;
+    const runtime: ToolRuntime = {
+      config,
+      db,
+      ...(dbError ? { dbError } : {}),
+      trace: tracer,
+      runs,
+      lessons,
+      modelSnapshot: modelResolution.snapshot,
+    };
+
+    if (db) {
+      tracer.event("models.snapshot", {
+        roles: modelResolution.snapshot.roles,
+        events: modelResolution.snapshot.events,
+      });
+    }
+
     const agentRegistration = await context.agent.transform((editor) => {
       for (const role of enabledRoles(config.roles.disabled)) {
         const route = modelResolution.routes[role.id];
@@ -92,6 +145,15 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
     } catch (error) {
       setupWarnings.push(`command.list: ${errorMessage(error)}`);
     }
+
+    try {
+      const toolRegistration = await registerTools(context, runtime);
+      disposers.push(toolRegistration.dispose);
+      toolNames = [...toolRegistration.names];
+    } catch (error) {
+      setupWarnings.push(`tool.registration: ${errorMessage(error)}`);
+    }
+
     if (hasRequestOptions(modelResolution)) {
       const hookRegistration = await context.session.hook("context", (event) => {
         try {
@@ -121,7 +183,15 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
       configWarnings: config.warnings,
       setupWarnings,
       commands: commandNames,
+      tools: toolNames,
       models: modelResolution.snapshot,
+      database: {
+        path: config.dbPath,
+        driver: db?.driver ?? null,
+        status: db ? "ready" : "unavailable",
+        ...(dbError ? { error: dbError } : {}),
+        ...(schemaVersion !== undefined ? { schemaVersion } : {}),
+      },
     };
     snapshots.set(context, snapshot);
 
@@ -138,6 +208,11 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
           // Cleanup is best-effort; one registration must not prevent the rest from disposing.
         }
       }
+      try {
+        db?.close();
+      } catch {
+        // Closing a broken database is best-effort.
+      }
     };
 
     return cleanup;
@@ -148,6 +223,11 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
       } catch {
         // Preserve the setup error while still attempting all cleanup.
       }
+    }
+    try {
+      db?.close();
+    } catch {
+      // Preserve the setup error.
     }
     throw error;
   }

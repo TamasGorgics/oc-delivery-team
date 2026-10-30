@@ -62,6 +62,7 @@ export interface WorktreesConfig {
 export interface DeliveryTeamConfig {
   readonly root: string;
   readonly rootDir: string;
+  readonly projectDir: string;
   readonly dbPath: string;
   readonly maxLoops: number;
   readonly lessons: LessonsConfig;
@@ -96,7 +97,11 @@ const WORKTREES_KEYS = new Set(["enabled", "baseDir"]);
 const MODEL_KEYS = new Set(["default", "tiers", "roles", "roleTier", "params", "diversity", "auto"]);
 const MODEL_SPEC_KEYS = new Set(["model", "params", "fallback"]);
 
-export function parseConfig(raw: unknown, projectDir: string): DeliveryTeamConfig {
+export function parseConfig(
+  raw: unknown,
+  projectDir: string,
+  dataBaseDir: string = projectDir,
+): DeliveryTeamConfig {
   const warnings: ConfigWarning[] = [];
   const options = isRecord(raw) ? raw : {};
 
@@ -111,11 +116,11 @@ export function parseConfig(raw: unknown, projectDir: string): DeliveryTeamConfi
   }
 
   const root = readString(options.root, ".team", "root", warnings);
-  const rootDir = path.isAbsolute(root) ? path.normalize(root) : path.resolve(projectDir, root);
+  const rootDir = path.isAbsolute(root) ? path.normalize(root) : path.resolve(dataBaseDir, root);
   const configuredDbPath = readString(options.dbPath, path.join(root, "team.db"), "dbPath", warnings);
   const dbPath = path.isAbsolute(configuredDbPath)
     ? path.normalize(configuredDbPath)
-    : path.resolve(projectDir, configuredDbPath);
+    : path.resolve(dataBaseDir, configuredDbPath);
 
   const maxLoops = readPositiveInt(options.maxLoops, 3, "maxLoops", warnings);
 
@@ -162,6 +167,7 @@ export function parseConfig(raw: unknown, projectDir: string): DeliveryTeamConfi
   return {
     root,
     rootDir,
+    projectDir,
     dbPath,
     maxLoops,
     lessons,

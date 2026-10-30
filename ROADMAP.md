@@ -10,7 +10,7 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 |---|---|---|---|---|
 | **M0** | API discovery and hello-world proof | M | — | ☑ Done |
 | **M1** | Skeleton, agents, options, model routing | L | M0 | ☑ Done |
-| **M2** | State machine, tools, SQLite, Stack Profile | L | M1 | ☐ Not started |
+| **M2** | State machine, tools, SQLite, Stack Profile | L | M1 | ☑ Done |
 | **M3** | Gating hooks | M | M2 | ☐ Not started |
 | **M4** | Observability: tracing, events, CLI reports | M | M2, M3 | ☐ Not started |
 | **M5** | Learning loop: lessons, prompt proposals, approvals | L | M2, M4 | ☐ Not started |
@@ -189,72 +189,72 @@ Concrete probes to run:
 
 ### M2.1 — Database foundation
 
-- [ ] Implement `state/db.ts` with the interface from SPEC §10.1 and runtime adapters: `bun:sqlite` when Bun, otherwise `node:sqlite`. No native npm modules.
-- [ ] Apply `PRAGMA journal_mode=WAL`, `busy_timeout=5000`, and `foreign_keys=ON` on open.
-- [ ] Resolve the database path against the **main repo directory**, not a worktree; use `git rev-parse --git-common-dir` when available, with a safe fallback.
-- [ ] Implement `state/schema.ts` migration 1 exactly as SPEC §10.2: runs, run_models, phase_transitions, loops, sessions, tool_calls, events, messages, notes, lessons, lessons_fts with sync triggers, prompt_versions, eval_runs.
-- [ ] Add `schema_migrations` with ordered, idempotent steps; test fresh install and upgrade.
-- [ ] Implement repositories in `state/runs.ts` and stubs for `lessons.ts`; all writes use parameterized statements and short transactions.
-- [ ] Implement `state/trace.ts`: `trace.event` and `trace.toolCall` swallow and log errors, never throw; a broken DB must not fail a tool call.
-- [ ] Ensure setup/migration is safe to run repeatedly across plugin reloads.
+- [x] Implement `state/db.ts` with the interface from SPEC §10.1 and runtime adapters: `bun:sqlite` when Bun, otherwise `node:sqlite`. No native npm modules.
+- [x] Apply `PRAGMA journal_mode=WAL`, `busy_timeout=5000`, and `foreign_keys=ON` on open.
+- [x] Resolve the database path against the **main repo directory**, not a worktree; use `git rev-parse --git-common-dir` when available, with a safe fallback.
+- [x] Implement `state/schema.ts` migration 1 exactly as SPEC §10.2: runs, run_models, phase_transitions, loops, sessions, tool_calls, events, messages, notes, lessons, lessons_fts with sync triggers, prompt_versions, eval_runs.
+- [x] Add `schema_migrations` with ordered, idempotent steps; test fresh install and upgrade.
+- [x] Implement repositories in `state/runs.ts` and stubs for `lessons.ts`; all writes use parameterized statements and short transactions.
+- [x] Implement `state/trace.ts`: `trace.event` and `trace.toolCall` swallow and log errors, never throw; a broken DB must not fail a tool call.
+- [x] Ensure setup/migration is safe to run repeatedly across plugin reloads.
 
 ### M2.2 — Artifacts, footers, and phase gates
 
-- [ ] Implement `state/artifacts.ts`: run artifact paths, footer parser (case-sensitive keys, last occurrence wins), and footer validation.
-- [ ] Encode the required-artifact table from SPEC §7.2 with phase-specific footer conditions.
-- [ ] Enforce test rules: `RESULT: PASS` requires `EXIT: 0`; `RESULT: SKIPPED` is allowed only when the profile has no test command and a `team_note(kind="decision")` explains why.
-- [ ] Implement spec approval tracking: `STATUS: APPROVED` plus a `human_approval` decision note; do not pretend the plugin can verify human approval.
-- [ ] Define clear denial messages that name the missing file and expected footer line.
+- [x] Implement `state/artifacts.ts`: run artifact paths, footer parser (case-sensitive keys, last occurrence wins), and footer validation.
+- [x] Encode the required-artifact table from SPEC §7.2 with phase-specific footer conditions.
+- [x] Enforce test rules: `RESULT: PASS` requires `EXIT: 0`; `RESULT: SKIPPED` is allowed only when the profile has no test command and a `team_note(kind="decision")` explains why.
+- [x] Implement spec approval tracking: `STATUS: APPROVED` plus a `human_approval` decision note; do not pretend the plugin can verify human approval.
+- [x] Define clear denial messages that name the missing file and expected footer line.
 
 ### M2.3 — Stack Profile
 
-- [ ] Implement `src/stack/profile.ts`: schema, validation, JSON merge patch, resolution order, and default profile.
-- [ ] Implement `src/stack/markers.ts` as a data table covering every ecosystem in SPEC §6.3 item 4, plus task runners, Docker, Nix, and monorepo/workspace markers.
-- [ ] Implement `src/stack/detect.ts` as a pure function over a file listing and small file reads. No command execution, no network, no writes.
-- [ ] Detect monorepos and multi-language projects as multiple components; prefer repo-declared commands (scripts, Makefile/just/Task targets, CI config) over ecosystem defaults.
-- [ ] Implement resolution order: human `<root>/stack.json` → `options.stack.overrides` → run-stored profile → detected → empty.
-- [ ] Implement default test/docs globs for scope gating when the profile has none; trace `gate.scope_default` when used.
-- [ ] Implement `team_stack` (return/resolve/persist, honoring `refresh`) and `team_stack_update` (validated merge patch, source `researcher`, refuse to override human-owned fields).
-- [ ] Persist the profile to `runs.stack_json` and `<run>/stack.json`.
-- [ ] Keep the invariant that the plugin never executes profile commands itself; agents run them with their own tools.
-- [ ] Use `node:path` for all path handling; preserve an optional `shell` hint; keep plugin logic OS-neutral (Windows is not a v1 target but must not be precluded).
+- [x] Implement `src/stack/profile.ts`: schema, validation, JSON merge patch, resolution order, and default profile.
+- [x] Implement `src/stack/markers.ts` as a data table covering every ecosystem in SPEC §6.3 item 4, plus task runners, Docker, Nix, and monorepo/workspace markers.
+- [x] Implement `src/stack/detect.ts` as a pure function over a file listing and small file reads. No command execution, no network, no writes.
+- [x] Detect monorepos and multi-language projects as multiple components; prefer repo-declared commands (scripts, Makefile/just/Task targets, CI config) over ecosystem defaults.
+- [x] Implement resolution order: human `<root>/stack.json` → `options.stack.overrides` → run-stored profile → detected → empty.
+- [x] Implement default test/docs globs for scope gating when the profile has none; trace `gate.scope_default` when used.
+- [x] Implement `team_stack` (return/resolve/persist, honoring `refresh`) and `team_stack_update` (validated merge patch, source `researcher`, refuse to override human-owned fields).
+- [x] Persist the profile to `runs.stack_json` and `<run>/stack.json`.
+- [x] Keep the invariant that the plugin never executes profile commands itself; agents run them with their own tools.
+- [x] Use `node:path` for all path handling; preserve an optional `shell` hint; keep plugin logic OS-neutral (Windows is not a v1 target but must not be precluded).
 
 ### M2.4 — Core tools and state machine
 
-- [ ] Define a shared tool result contract: JSON-schema input with `additionalProperties: false`; expected failures return an `ok:false` text result instead of throwing.
-- [ ] Implement run resolution exactly as SPEC §7.6: explicit `run` → calling session → parent session → single open run → ambiguous/none.
-- [ ] Implement `team_start`: run id `<base36-ts>-<slug>`, run directory, session binding, initial phase, `run.start` trace, and `run_models` snapshot (role, model or NULL, params, source); return the run id and artifact directory.
-- [ ] Implement `team_status`: phase, required artifact/footer status, loop counters, open lesson count, recent events.
-- [ ] Persist caller `agent`, `sessionID`, and `toolCallID` on every tool-originated trace row where available.
-- [ ] Upsert `sessions` from tool executor context (`id`, `agent`, `run_id`) so subagent run resolution works before event tracing lands in M4.
-- [ ] Implement `team_advance`: validate the phase gate; on failure return the reason and trace `gate.denied`; on success transition exactly one phase, record the transition and duration, and treat `done` as terminal (refuse advances after it).
-- [ ] Implement `team_rewind`: earlier-phase validation, reason, loop increment on re-entry, `ESCALATE_TO_HUMAN` at `maxLoops`, `loop.exceeded` event.
-- [ ] Implement `team_loop`: increment/check the current phase counter and return remaining loops or escalation.
-- [ ] Implement `team_note`: append `decision` / `finding` / `risk` / `question` with caller agent and session.
-- [ ] Add a minimal `report.md` generator for entering `retro` (phase durations, loops, gate denials, notes); enrich it in M4.
-- [ ] Ensure `done` is terminal and closes the run; enforce run statuses `open | blocked | closed | aborted`.
-- [ ] Implement `src/cli/team.ts` with `team db migrate`, `team stack [<run>]` (including provenance), and `team models [--run <id>]` (live resolution or stored snapshot); honor `--root` and default to `.team`.
+- [x] Define a shared tool result contract: JSON-schema input with `additionalProperties: false`; expected failures return an `ok:false` text result instead of throwing.
+- [x] Implement run resolution exactly as SPEC §7.6: explicit `run` → calling session → parent session → single open run → ambiguous/none.
+- [x] Implement `team_start`: run id `<base36-ts>-<slug>`, run directory, session binding, initial phase, `run.start` trace, and `run_models` snapshot (role, model or NULL, params, source); return the run id and artifact directory.
+- [x] Implement `team_status`: phase, required artifact/footer status, loop counters, open lesson count, recent events.
+- [x] Persist caller `agent`, `sessionID`, and `toolCallID` on every tool-originated trace row where available.
+- [x] Upsert `sessions` from tool executor context (`id`, `agent`, `run_id`) so subagent run resolution works before event tracing lands in M4.
+- [x] Implement `team_advance`: validate the phase gate; on failure return the reason and trace `gate.denied`; on success transition exactly one phase, record the transition and duration, and treat `done` as terminal (refuse advances after it).
+- [x] Implement `team_rewind`: earlier-phase validation, reason, loop increment on re-entry, `ESCALATE_TO_HUMAN` at `maxLoops`, `loop.exceeded` event.
+- [x] Implement `team_loop`: increment/check the current phase counter and return remaining loops or escalation.
+- [x] Implement `team_note`: append `decision` / `finding` / `risk` / `question` with caller agent and session.
+- [x] Add a minimal `report.md` generator for entering `retro` (phase durations, loops, gate denials, notes); enrich it in M4.
+- [x] Ensure `done` is terminal and closes the run; enforce run statuses `open | blocked | closed | aborted`.
+- [x] Implement `src/cli/team.ts` with `team db migrate`, `team stack [<run>]` (including provenance), and `team models [--run <id>]` (live resolution or stored snapshot); honor `--root` and default to `.team`.
 
 ### M2.5 — Tests and acceptance
 
-- [ ] Footer parser tests: every required key, missing footer, wrong case, last occurrence wins, malformed integers.
-- [ ] Gate table tests: one passing and one failing case for every row of SPEC §7.2, including `PASS` without `EXIT: 0`, `SKIPPED` with/without justification, spec not approved, blockers > 0.
-- [ ] State-machine tests: advance, rewind, loop cap at `maxLoops+1`, escalation, terminal state, statuses.
-- [ ] Run-resolution tests for every step in §7.6, including ambiguous and no-open-run cases.
-- [ ] Stack tests: one fixture file listing per marker-table row; monorepo; multi-language; repo-declared command precedence; empty directory → empty profile; resolution order; detection performs no commands/network (spies).
-- [ ] DB tests: fresh migration, upgrade, WAL, FTS triggers, trace never throwing with a broken DB.
-- [ ] Scripted integration test drives a run through every phase using fake artifacts and verifies every gate denial case.
-- [ ] `run_models` snapshot matches the M1 resolution result.
-- [ ] CLI smoke tests cover `team db migrate`, `team stack`, and `team models` against a temp DB.
+- [x] Footer parser tests: every required key, missing footer, wrong case, last occurrence wins, malformed integers.
+- [x] Gate table tests: one passing and one failing case for every row of SPEC §7.2, including `PASS` without `EXIT: 0`, `SKIPPED` with/without justification, spec not approved, blockers > 0.
+- [x] State-machine tests: advance, rewind, loop cap at `maxLoops+1`, escalation, terminal state, statuses.
+- [x] Run-resolution tests for every step in §7.6, including ambiguous and no-open-run cases.
+- [x] Stack tests: one fixture file listing per marker-table row; monorepo; multi-language; repo-declared command precedence; empty directory → empty profile; resolution order; detection performs no commands/network (spies).
+- [x] DB tests: fresh migration, upgrade, WAL, FTS triggers, trace never throwing with a broken DB.
+- [x] Scripted integration test drives a run through every phase using fake artifacts and verifies every gate denial case.
+- [x] `run_models` snapshot matches the M1 resolution result.
+- [x] CLI smoke tests cover `team db migrate`, `team stack`, and `team models` against a temp DB.
 
 **M2 exit gate**
 
-- [ ] A scripted run reaches `done`, including spec approval and all footer conditions.
-- [ ] Every gate denial case is verified.
-- [ ] Loop cap escalates at exactly `maxLoops + 1`.
-- [ ] Stack detection passes fixtures for every marker row.
-- [ ] Resolution order for profiles and runs is verified.
-- [ ] Typecheck and tests are green.
+- [x] A scripted run reaches `done`, including spec approval and all footer conditions.
+- [x] Every gate denial case is verified.
+- [x] Loop cap escalates at exactly `maxLoops + 1`.
+- [x] Stack detection passes fixtures for every marker row.
+- [x] Resolution order for profiles and runs is verified.
+- [x] Typecheck and tests are green.
 
 **Suggested commits:** `feat: add sqlite adapter and schema` → `feat: add artifact footers and phase gates` → `feat: add stack profile detection` → `feat: add run state machine tools` → `test: cover phase gates and stack profiles`.
 
