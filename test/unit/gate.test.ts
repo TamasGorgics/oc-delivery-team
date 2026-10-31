@@ -5,6 +5,7 @@ import path from "node:path";
 import deliveryTeam, { getDeliveryTeamSnapshot } from "../../src/index";
 import { parseConfig } from "../../src/config";
 import { createGateHandler, GateDenial, type ToolBeforeEvent } from "../../src/hooks/gate";
+import { createTraceBeforeHandler } from "../../src/hooks/trace";
 import { openDatabase, type TeamDatabase } from "../../src/state/db";
 import { LessonsRepository } from "../../src/state/lessons";
 import type { Phase } from "../../src/state/phases";
@@ -159,20 +160,26 @@ async function setupPlugin(options?: unknown): Promise<{ fake: FakeContextHarnes
 }
 
 describe("gate registration", () => {
-  test("registers the hook only when gating is enabled and disposes it", async () => {
+  test("registers the gate hook only when gating is enabled and disposes it", async () => {
     const disabled = createFakeContext({
       projectDirectory: tempProject(),
       options: { gating: { enabled: false } },
     });
     const cleanupDisabled = await deliveryTeam.setup(disabled.context);
     if (typeof cleanupDisabled !== "function") throw new Error("Missing cleanup function.");
-    expect(disabled.state.toolBeforeHooks).toHaveLength(0);
+    // Tracing stays on even without gating; only the gate hook is absent.
+    expect(disabled.state.toolBeforeHooks).toHaveLength(1);
+    expect(disabled.state.toolAfterHooks).toHaveLength(1);
     await cleanupDisabled();
+    expect(disabled.state.toolBeforeHooks).toHaveLength(0);
+    expect(disabled.state.toolAfterHooks).toHaveLength(0);
 
     const { fake, cleanup } = await setupPlugin();
-    expect(fake.state.toolBeforeHooks).toHaveLength(1);
+    expect(fake.state.toolBeforeHooks).toHaveLength(2);
+    expect(fake.state.toolAfterHooks).toHaveLength(1);
     await cleanup();
     expect(fake.state.toolBeforeHooks).toHaveLength(0);
+    expect(fake.state.toolAfterHooks).toHaveLength(0);
   });
 
   test("keeps setup alive when gate registration fails", async () => {
@@ -193,10 +200,87 @@ describe("gate registration", () => {
   });
 });
 
+describe("gate and trace integration", () => {
+  test("traces regardless of gating and leaves denied calls without tool_calls", async () => {
+    const disabled = await setupPlugin({ gating: { enabled: false } });
+    await disabled.fake.invokeTool(
+      "team_start",
+      { title: "Tracing without gating" },
+      { sessionID: "session-1", agent: "team-lead" },
+    );
+    await disabled.fake.invokeToolBefore({
+      tool: "write",
+      input: { path: "src/a.ts" },
+      sessionID: "session-1",
+      agent: "developer",
+      id: "call-allow",
+    });
+    await disabled.fake.invokeToolAfter({
+      tool: "write",
+      input: { path: "src/a.ts" },
+      sessionID: "session-1",
+      agent: "developer",
+      id: "call-allow",
+      status: "completed",
+      result: { output: { ok: true }, content: [{ type: "text", text: "written" }] },
+    });
+
+    const disabledPath = getDeliveryTeamSnapshot(disabled.fake.context)?.database.path;
+    if (!disabledPath) throw new Error("Missing database path.");
+    const disabledDb = (await openDatabase(disabledPath)).db;
+    try {
+      expect(disabledDb.get<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM events WHERE kind = 'tool.before'",
+      )?.count).toBe(1);
+      expect(disabledDb.get<{ run_id: string | null; ok: number }>(
+        "SELECT run_id, ok FROM tool_calls WHERE tool_call_id = 'call-allow'",
+      )).toMatchObject({ ok: 1 });
+      expect(disabledDb.get<{ run_id: string | null }>(
+        "SELECT run_id FROM tool_calls WHERE tool_call_id = 'call-allow'",
+      )?.run_id).toBeTruthy();
+    } finally {
+      disabledDb.close();
+    }
+    await disabled.cleanup();
+
+    const enabled = await setupPlugin({ gating: { strict: true } });
+    await enabled.fake.invokeTool(
+      "team_start",
+      { title: "Tracing with a denial" },
+      { sessionID: "session-1", agent: "team-lead" },
+    );
+    const denial = await asyncDenial(() => enabled.fake.invokeToolBefore({
+      tool: "write",
+      input: { path: "src/a.ts" },
+      sessionID: "session-1",
+      agent: "developer",
+      id: "call-denied",
+    }));
+    expect(denial.code).toBe("edit_phase_blocked");
+
+    const enabledPath = getDeliveryTeamSnapshot(enabled.fake.context)?.database.path;
+    if (!enabledPath) throw new Error("Missing database path.");
+    const enabledDb = (await openDatabase(enabledPath)).db;
+    try {
+      expect(enabledDb.get<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM events WHERE kind = 'tool.before'",
+      )?.count).toBe(1);
+      expect(enabledDb.get<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM events WHERE kind = 'gate.denied'",
+      )?.count).toBe(1);
+      expect(enabledDb.get<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM tool_calls WHERE tool_call_id = 'call-denied'",
+      )?.count).toBe(0);
+    } finally {
+      enabledDb.close();
+    }
+  });
+});
+
 describe("gate tracing and resolution", () => {
   test("always traces tool.before and never lets trace failures escape", async () => {
     const harness = await createGateHarness();
-    const handler = createGateHandler(harness.runtime);
+    const handler = createTraceBeforeHandler(harness.runtime);
 
     expect(() => handler(event("read", { path: "src/a.ts" }))).not.toThrow();
     expect(events(harness, "tool.before")[0]).toMatchObject({
@@ -204,10 +288,9 @@ describe("gate tracing and resolution", () => {
       message_id: "message-1",
       input_keys: ["path"],
     });
-    expect(events(harness, "gate.unresolved")[0]).toMatchObject({ strict: false });
 
     harness.db.close();
-    expect(() => createGateHandler(harness.runtime)(event("read", { path: "x" }))).not.toThrow();
+    expect(() => createTraceBeforeHandler(harness.runtime)(event("read", { path: "x" }))).not.toThrow();
     expect(harness.runtime.trace.getErrors().length).toBeGreaterThan(0);
   });
 

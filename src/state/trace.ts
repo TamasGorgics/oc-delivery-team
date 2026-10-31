@@ -1,4 +1,5 @@
 import type { TeamDatabase } from "./db";
+import { redactSecrets, redactText } from "./privacy";
 
 export interface TraceIdentity {
   readonly runId?: string | null;
@@ -52,7 +53,7 @@ export class Tracer {
       if (identity.phase) payload.phase = identity.phase;
       this.db.run(
         "INSERT INTO events (run_id, at, kind, data_json) VALUES (?, ?, ?, ?)",
-        [identity.runId ?? null, this.now(), kind, safeJson(payload)],
+          [identity.runId ?? null, this.now(), kind, safeJson(redactSecrets(payload))],
       );
     } catch (error) {
       this.record("event", error);
@@ -78,8 +79,8 @@ export class Tracer {
           row.durationMs ?? null,
           row.ok === undefined || row.ok === null ? null : row.ok ? 1 : 0,
           row.outputBytes ?? null,
-          row.input === undefined ? null : safeJson(row.input),
-          row.outputPreview ?? null,
+          row.input === undefined ? null : safeJson(redactSecrets(row.input)),
+          row.outputPreview == null ? null : redactText(row.outputPreview),
         ],
       );
     } catch (error) {

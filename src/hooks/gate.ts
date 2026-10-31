@@ -3,7 +3,6 @@ import {
   extractEditedPaths,
   extractShellCommand,
   roleIdFromAgent,
-  toolInputObject,
   type PluginContext,
 } from "../compat";
 import { StackService } from "../stack/service";
@@ -188,15 +187,6 @@ export function createGateHandler(runtime: ToolRuntime): (event: ToolBeforeEvent
       agent: event.agent,
       toolCallId: event.id,
     };
-    runtime.trace.event(
-      "tool.before",
-      {
-        tool: event.tool,
-        message_id: event.messageID,
-        input_keys: Object.keys(toolInputObject(event.input)),
-      },
-      identity,
-    );
 
     let decision: GateDecision;
     try {

@@ -5,6 +5,7 @@ import path from "node:path";
 import deliveryTeam, { getDeliveryTeamSnapshot } from "../../src/index";
 import { openDatabase } from "../../src/state/db";
 import { RunRepository } from "../../src/state/runs";
+import { Tracer } from "../../src/state/trace";
 import { createFakeContext, type FakeContextHarness } from "../fakes/ctx";
 
 interface Harness {
@@ -118,6 +119,80 @@ describe("tool registration and team_start", () => {
       schemaVersion: 1,
     });
     expect(Object.keys(snapshot?.models.roles ?? {})).toHaveLength(9);
+  });
+
+  test("team_status reports tool, message, gate, and loop counters", async () => {
+    const harness = await setup({ config: { gating: { enabled: false } } });
+    const started = await call(harness, "team_start", { title: "Counters" });
+    const run = started.run as string;
+
+    await harness.fake.invokeToolBefore({
+      tool: "read",
+      input: { path: "src/a.ts" },
+      sessionID: "session-1",
+      agent: "team-lead",
+      id: "call-read",
+    });
+    await harness.fake.invokeToolAfter({
+      tool: "read",
+      input: { path: "src/a.ts" },
+      sessionID: "session-1",
+      agent: "team-lead",
+      id: "call-read",
+      status: "completed",
+      result: { output: { ok: true }, content: [{ type: "text", text: "read" }] },
+    });
+    await harness.fake.invokeToolBefore({
+      tool: "shell",
+      input: { command: "false" },
+      sessionID: "session-1",
+      agent: "team-lead",
+      id: "call-shell",
+    });
+    await harness.fake.invokeToolAfter({
+      tool: "shell",
+      input: { command: "false" },
+      sessionID: "session-1",
+      agent: "team-lead",
+      id: "call-shell",
+      status: "error",
+      error: { message: "exit 1" },
+    });
+
+    const { db } = await openDatabase(path.join(harness.rootDir, "team.db"));
+    try {
+      const runs = new RunRepository(db);
+      runs.upsertMessage({
+        id: "message-status",
+        sessionId: "session-1",
+        runId: run,
+        agent: "team-lead",
+        model: "provider/model",
+        tokensIn: 7,
+        tokensOut: 3,
+        cost: 0.004,
+      });
+      runs.incrementLoop(run, "brainstorm");
+      new Tracer(db).event("gate.denied", { phase: "brainstorm" }, { runId: run });
+    } finally {
+      db.close();
+    }
+
+    const status = await call(harness, "team_status", { run });
+    expect(status.counters).toMatchObject({
+      tool_calls: 2,
+      tool_failures: 1,
+      gate_denials: 1,
+      gate_unresolved: 0,
+      loops: 1,
+      messages: 1,
+      tokens_in: 7,
+      tokens_out: 3,
+      cost: 0.004,
+    });
+    expect(status.recent_tool_calls).toHaveLength(2);
+    expect(status.recent_tool_calls.map((row: any) => row.tool).sort()).toEqual(["read", "shell"]);
+    expect(status.text).toBeUndefined();
   });
 
   test("team_start creates the run, artifact directory, session binding, transitions, and model rows", async () => {

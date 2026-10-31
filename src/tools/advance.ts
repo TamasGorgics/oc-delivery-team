@@ -106,7 +106,10 @@ export function createAdvanceTool(runtime: ToolRuntime) {
             transitions: services.runs.getTransitions(run.id),
             loops: services.runs.getLoops(run.id),
             notes: services.runs.listNotes(run.id),
-            events: services.runs.listRecentEvents(run.id, 1_000),
+            events: services.runs.listEvents(run.id),
+            toolCalls: services.runs.listToolCalls(run.id),
+            messages: services.runs.listMessages(run.id),
+            sessions: services.runs.listSessionsForRun(run.id),
             now,
           });
           runtime.trace.event(

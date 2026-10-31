@@ -31,6 +31,7 @@ export interface FakeContextOptions {
   readonly modelListError?: Error;
   readonly providerListError?: Error;
   readonly modelDefaultError?: Error;
+  readonly eventSubscribeError?: Error;
 }
 
 export interface FakePromptCall {
@@ -66,6 +67,50 @@ export interface FakeToolBeforeInvocation {
   readonly id?: string;
 }
 
+export type FakeToolAfterEvent =
+  | (FakeToolBeforeEvent & {
+      readonly status: "completed";
+      readonly result: unknown;
+    })
+  | (FakeToolBeforeEvent & {
+      readonly status: "error";
+      readonly error: { readonly message: string } & Record<string, unknown>;
+    });
+
+export interface FakeToolAfterInvocation {
+  readonly tool: string;
+  readonly input?: unknown;
+  readonly sessionID?: string;
+  readonly agent?: string;
+  readonly messageID?: string;
+  readonly id?: string;
+  readonly status?: "completed" | "error";
+  readonly result?: unknown;
+  readonly error?: { readonly message: string } & Record<string, unknown>;
+}
+
+export interface FakeEventEnvelope {
+  readonly type: string;
+  readonly data: Record<string, unknown>;
+  readonly created: number;
+  readonly location: { readonly directory: string };
+}
+
+export interface FakeEventOptions {
+  readonly data?: Record<string, unknown>;
+  readonly created?: number;
+  readonly location?: { readonly directory: string };
+}
+
+export interface FakeEventSubscriber {
+  readonly types?: readonly string[];
+  readonly signal?: AbortSignal;
+  readonly queue: FakeEventEnvelope[];
+  wake?: () => void;
+  failure?: Error;
+  closed: boolean;
+}
+
 export interface FakeContextHarness {
   readonly context: PluginContext;
   readonly state: {
@@ -78,6 +123,10 @@ export interface FakeContextHarness {
     readonly agentTransforms: Array<(editor: AgentEditor) => void>;
     readonly toolTransforms: Array<(editor: ToolEditor) => void>;
     readonly toolBeforeHooks: Array<(event: FakeToolBeforeEvent) => void | Promise<void>>;
+    readonly toolAfterHooks: Array<(event: FakeToolAfterEvent) => void | Promise<void>>;
+    readonly eventSubscribers: FakeEventSubscriber[];
+    eventSubscribeCount: number;
+    eventAbortCount: number;
     contextHook?: (event: FakeContextEvent) => void | Promise<void>;
     reloadCount: number;
     commandReloadCount: number;
@@ -87,6 +136,10 @@ export interface FakeContextHarness {
   invokeCommand(name: string, text?: string): Promise<void>;
   invokeTool(name: string, input: unknown, context?: Partial<FakeToolCallContext>): Promise<{ output?: unknown; content?: unknown }>;
   invokeToolBefore(event: FakeToolBeforeInvocation): Promise<void>;
+  invokeToolAfter(event: FakeToolAfterInvocation): Promise<void>;
+  emit(type: string, options?: FakeEventOptions): Promise<void>;
+  failEvents(error: Error): Promise<void>;
+  flushEvents(): Promise<void>;
   invokeContextHook(agent: string, options?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
@@ -129,6 +182,8 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
   const agentTransforms: Array<(editor: AgentEditor) => void> = [];
   const toolTransforms: Array<(editor: ToolEditor) => void> = [];
   const toolBeforeHooks: Array<(event: FakeToolBeforeEvent) => void | Promise<void>> = [];
+  const toolAfterHooks: Array<(event: FakeToolAfterEvent) => void | Promise<void>> = [];
+  const eventSubscribers: FakeEventSubscriber[] = [];
   const state: FakeContextHarness["state"] = {
     agents,
     commands,
@@ -139,6 +194,10 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
     agentTransforms,
     toolTransforms,
     toolBeforeHooks,
+    toolAfterHooks,
+    eventSubscribers,
+    eventSubscribeCount: 0,
+    eventAbortCount: 0,
     contextHook: undefined,
     reloadCount: 0,
     commandReloadCount: 0,
@@ -244,14 +303,67 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
       },
       hook: async (
         name: string,
-        handler: (event: FakeToolBeforeEvent) => void | Promise<void>,
+        handler:
+          | ((event: FakeToolBeforeEvent) => void | Promise<void>)
+          | ((event: FakeToolAfterEvent) => void | Promise<void>),
       ): Promise<Registration> => {
-        if (name !== "execute.before") throw new Error(`Unsupported fake tool hook: ${name}`);
-        toolBeforeHooks.push(handler);
-        return registration(() => {
-          const index = toolBeforeHooks.indexOf(handler);
-          if (index >= 0) toolBeforeHooks.splice(index, 1);
-        });
+        if (name === "execute.before") {
+          const before = handler as (event: FakeToolBeforeEvent) => void | Promise<void>;
+          toolBeforeHooks.push(before);
+          return registration(() => {
+            const index = toolBeforeHooks.indexOf(before);
+            if (index >= 0) toolBeforeHooks.splice(index, 1);
+          });
+        }
+        if (name === "execute.after") {
+          const after = handler as (event: FakeToolAfterEvent) => void | Promise<void>;
+          toolAfterHooks.push(after);
+          return registration(() => {
+            const index = toolAfterHooks.indexOf(after);
+            if (index >= 0) toolAfterHooks.splice(index, 1);
+          });
+        }
+        throw new Error(`Unsupported fake tool hook: ${name}`);
+      },
+    },
+    event: {
+      subscribe: (
+        subscribeOptions: { readonly signal?: AbortSignal; readonly types?: readonly string[] } = {},
+      ): AsyncIterable<FakeEventEnvelope> => {
+        state.eventSubscribeCount += 1;
+        if (options.eventSubscribeError) throw options.eventSubscribeError;
+        const subscriber: FakeEventSubscriber = {
+          ...(subscribeOptions.types ? { types: subscribeOptions.types } : {}),
+          ...(subscribeOptions.signal ? { signal: subscribeOptions.signal } : {}),
+          queue: [],
+          closed: false,
+        };
+        eventSubscribers.push(subscriber);
+        const close = (): void => {
+          if (subscriber.closed) return;
+          subscriber.closed = true;
+          state.eventAbortCount += 1;
+          subscriber.wake?.();
+        };
+        if (subscribeOptions.signal?.aborted) close();
+        else subscribeOptions.signal?.addEventListener("abort", close, { once: true });
+        return {
+          [Symbol.asyncIterator](): AsyncIterator<FakeEventEnvelope> {
+            return {
+              async next(): Promise<IteratorResult<FakeEventEnvelope>> {
+                for (;;) {
+                  if (subscriber.closed) return { done: true, value: undefined };
+                  if (subscriber.failure) throw subscriber.failure;
+                  const event = subscriber.queue.shift();
+                  if (event) return { done: false, value: event };
+                  await new Promise<void>((resolve) => {
+                    subscriber.wake = resolve;
+                  });
+                }
+              },
+            };
+          },
+        };
       },
     },
     model: {
@@ -328,12 +440,70 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
       };
       for (const hook of [...toolBeforeHooks]) await hook(resolved);
     },
+    async invokeToolAfter(event) {
+      const base: FakeToolBeforeEvent = {
+        tool: event.tool,
+        sessionID: event.sessionID ?? "session-1",
+        agent: event.agent ?? "team-lead",
+        messageID: event.messageID ?? "message-1",
+        id: event.id ?? "call-1",
+        input: event.input ?? {},
+      };
+      const resolved: FakeToolAfterEvent = event.status === "error"
+        ? {
+            ...base,
+            status: "error",
+            error: event.error ?? { message: "tool failed" },
+          }
+        : {
+            ...base,
+            status: "completed",
+            result: event.result ?? {
+              output: { ok: true },
+              content: [{ type: "text", text: "ok" }],
+            },
+          };
+      for (const hook of [...toolAfterHooks]) await hook(resolved);
+    },
+    async emit(type, options = {}) {
+      const event: FakeEventEnvelope = {
+        type,
+        data: options.data ?? {},
+        created: options.created ?? Date.now(),
+        location: options.location ?? { directory: projectDirectory },
+      };
+      for (const subscriber of eventSubscribers) {
+        if (subscriber.closed) continue;
+        if (subscriber.types && !subscriber.types.includes(type)) continue;
+        subscriber.queue.push(event);
+        subscriber.wake?.();
+        subscriber.wake = undefined;
+      }
+      await flushEvents();
+    },
+    async failEvents(error) {
+      for (const subscriber of eventSubscribers) {
+        if (subscriber.closed) continue;
+        subscriber.failure = error;
+        subscriber.wake?.();
+        subscriber.wake = undefined;
+      }
+      await flushEvents();
+    },
+    async flushEvents() {
+      await flushEvents();
+    },
     async invokeContextHook(agent, options = {}) {
       const event: FakeContextEvent = { agent, options };
       await state.contextHook?.(event);
       return event.options;
     },
   };
+}
+
+async function flushEvents(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
 
 function createAgentDraft(id: string): AgentDraft {

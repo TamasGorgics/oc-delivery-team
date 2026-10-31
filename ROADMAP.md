@@ -12,7 +12,7 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 | **M1** | Skeleton, agents, options, model routing | L | M0 | ☑ Done |
 | **M2** | State machine, tools, SQLite, Stack Profile | L | M1 | ☑ Done |
 | **M3** | Gating hooks | M | M2 | ☑ Done |
-| **M4** | Observability: tracing, events, CLI reports | M | M2, M3 | ☐ Not started |
+| **M4** | Observability: tracing, events, CLI reports | M | M2, M3 | ☑ Done |
 | **M5** | Learning loop: lessons, prompt proposals, approvals | L | M2, M4 | ☐ Not started |
 | **M6** | Parallel worktrees and eval harness (optional flag) | L | M2, M4 | ☐ Not started |
 | **M7** | Packaging, documentation, clean-install release | M | all | ☐ Not started |
@@ -305,34 +305,34 @@ Concrete probes to run:
 
 **Deliverables**
 
-- `src/hooks/trace-after.ts`
+- `src/hooks/trace.ts` and `src/state/privacy.ts`
 - `src/hooks/events.ts` if V9 is available
 - Enriched `team_status`, `report.md`, and CLI: `team runs`, `team report`, `team trace`
 - Session/message tables populated where the event stream allows
 
 ### Work
 
-- [ ] Implement `execute.after` tracing: tool, agent/session when available, run, phase, duration (match `before` by `toolCallID` if exposed), output bytes, `ok`, optional input/preview.
-- [ ] Wrap the entire hook in try/catch; a broken DB must never turn a successful tool call into a failure.
-- [ ] Enforce privacy defaults: no input/output persistence unless enabled; redact common secret patterns when capture is on; truncate previews to `trace.previewChars`.
-- [ ] Subscribe to events if available: maintain sessions (`parent_id`, agent, run, start/end) and messages (model, tokens, cost) in the background. Do not block setup; abort the stream in cleanup.
-- [ ] If events are unavailable, derive sessions from tool executor contexts and document the gap.
-- [ ] Extend `team_status` with recent events and useful counters.
-- [ ] Generate the full `report.md` when entering `retro`: phase durations, loops, gate denials, tool counts by tool/agent, notes, and token/cost by role/model when available.
+- [x] Implement `execute.after` tracing: tool, agent/session when available, run, phase, duration (match `before` by call ID), output bytes, `ok`, optional input/preview. A bounded LIFO span stack handles V18 nested calls that share call IDs.
+- [x] Wrap the entire hook in try/catch; a broken DB must never turn a successful tool call into a failure.
+- [x] Enforce privacy defaults: no input/output persistence unless enabled; redact common secret patterns when capture is on; truncate previews to `trace.previewChars`.
+- [x] Subscribe to events if available: maintain sessions (`parent_id`, agent, run, start/end) and messages (model, tokens, cost) in the background. Do not block setup; abort the stream in cleanup.
+- [x] If events are unavailable, derive sessions from tool executor contexts and document the gap; expose asynchronous stream failures as degraded status.
+- [x] Extend `team_status` with recent events and useful counters.
+- [x] Generate the full `report.md` when entering `retro`: phase durations, loops, gate denials, tool counts by tool/agent, notes, and token/cost by role/model when available.
 - [ ] Implement CLI:
-  - [ ] `team runs [--open]`
-  - [ ] `team report <run>`
-  - [ ] `team trace <run> [--jsonl]`
-- [ ] Ensure trace export is stable JSONL and excludes secrets by default.
-- [ ] Add a test with a deliberately broken DB adapter asserting tool calls still succeed.
+  - [x] `team runs [--open]`
+  - [x] `team report <run>`
+  - [x] `team trace <run> [--jsonl]`
+- [x] Ensure trace export is stable JSONL and excludes secrets by default.
+- [x] Add a test with a deliberately broken DB adapter asserting tool calls still succeed.
 
 ### Acceptance
 
-- [ ] After a scripted run, `team report` shows per-phase durations, tool counts, gate denials, and loops.
-- [ ] `team trace --jsonl` emits valid JSONL for tool calls and events.
-- [ ] Tracing failures never fail a tool call.
-- [ ] Privacy defaults are verified; redaction is tested when capture is enabled.
-- [ ] Event subscription cleans up without blocking setup; degraded mode is documented.
+- [x] After a scripted run, `team report` shows per-phase durations, tool counts, gate denials, and loops.
+- [x] `team trace --jsonl` emits valid JSONL for tool calls and events.
+- [x] Tracing failures never fail a tool call.
+- [x] Privacy defaults are verified; redaction is tested when capture is enabled.
+- [x] Event subscription cleans up without blocking setup; degraded mode is documented.
 
 **Suggested commits:** `feat: trace tool calls` → `feat: subscribe to session and message events` → `feat: add report and trace cli` → `test: make tracing fail-safe`.
 
@@ -470,9 +470,10 @@ Map SPEC §16 to concrete files so nothing is forgotten.
 | State machine, loops, escalation | `test/unit/state.test.ts` | M2 |
 | Run resolution order | `test/unit/runs.test.ts` | M2 |
 | Migrations, FTS triggers, WAL | `test/unit/db.test.ts` | M2 |
-| Trace never throws | `test/unit/trace.test.ts` | M2 |
+| Trace never throws | `test/unit/trace.test.ts` | M2, M4 |
 | Stack detection and resolution order | `test/unit/stack.test.ts` + per-row fixtures | M2 |
 | Gate decisions and scope | `test/unit/gate.test.ts` | M3 |
+| Event ingestion, reports, and status counters | `test/unit/events.test.ts`, `report.test.ts`, `tools.test.ts` | M4 |
 | CLI runs/report/trace | `test/unit/cli.test.ts` | M4 |
 | Lesson validation, ranking, budget, duplicates | `test/unit/lessons.test.ts` | M5 |
 | Prompt approval and injection | `test/unit/prompt-approval.test.ts` | M5 |

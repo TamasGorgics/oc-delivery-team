@@ -14,7 +14,9 @@ import {
 } from "./compat";
 import { registerCommands } from "./commands";
 import { parseConfig, type ConfigWarning, type DeliveryTeamConfig } from "./config";
+import { startEventIngest, type EventIngestHandle, type EventIngestStatus } from "./hooks/events";
 import { registerGate } from "./hooks/gate";
+import { registerTraceHooks } from "./hooks/trace";
 import { resolveModels, type ModelResolution } from "./models";
 import { getDefaultPrompt } from "./prompts";
 import {
@@ -37,6 +39,7 @@ export interface DeliveryTeamSnapshot {
   readonly commands: readonly string[];
   readonly tools: readonly string[];
   readonly models: ModelResolution["snapshot"];
+  readonly events: EventIngestStatus;
   readonly database: {
     readonly path: string;
     readonly driver: string | null;
@@ -88,6 +91,11 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
   let db: TeamDatabase | null = null;
   let dbError: string | undefined;
   let schemaVersion: number | undefined;
+  let eventIngest: EventIngestHandle | null = null;
+
+  const addWarning = (message: string): void => {
+    if (setupWarnings.length < 50) setupWarnings.push(message);
+  };
 
   try {
     try {
@@ -123,6 +131,16 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
       });
     }
 
+    try {
+      eventIngest = startEventIngest(context, runtime, {
+        projectDir,
+        onWarning: (message) => addWarning(message),
+      });
+      disposers.push(eventIngest.dispose);
+    } catch (error) {
+      addWarning(`events.subscribe: ${errorMessage(error)}`);
+    }
+
     const agentRegistration = await context.agent.transform((editor) => {
       for (const role of enabledRoles(config.roles.disabled)) {
         const route = modelResolution.routes[role.id];
@@ -153,6 +171,15 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
       toolNames = [...toolRegistration.names];
     } catch (error) {
       setupWarnings.push(`tool.registration: ${errorMessage(error)}`);
+    }
+
+    // Tracing is always on and independent of gating. Register it before the
+    // gate so a denied call already has its tool.before record.
+    try {
+      const traceRegistration = await registerTraceHooks(context, runtime);
+      disposers.push(traceRegistration.dispose);
+    } catch (error) {
+      setupWarnings.push(`trace.registration: ${errorMessage(error)}`);
     }
 
     if (config.gating.enabled) {
@@ -195,6 +222,12 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
       commands: commandNames,
       tools: toolNames,
       models: modelResolution.snapshot,
+      get events() {
+        return eventIngest?.status() ?? {
+          status: "unavailable",
+          error: "Event ingestion was not started.",
+        };
+      },
       database: {
         path: config.dbPath,
         driver: db?.driver ?? null,

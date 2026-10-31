@@ -1,5 +1,5 @@
 import { validatePhaseGate, type GateResult } from "../state/artifacts";
-import { parseJsonRecord, type RunRow } from "../state/runs";
+import { parseJsonRecord, type RunRow, type ToolCallRow } from "../state/runs";
 import { StackService } from "../stack/service";
 import {
   defineTeamTool,
@@ -23,7 +23,7 @@ interface StatusInput {
 export function createStatusTool(runtime: ToolRuntime) {
   return defineTeamTool<StatusInput>(runtime, {
     name: "team_status",
-    description: "Show the current run phase, gate status, loops, notes, and recent events.",
+    description: "Show the current run phase, gate status, loops, notes, counters, and recent events.",
     input: objectSchema({
       run: { type: "string", description: "Optional run id." },
     }),
@@ -44,6 +44,19 @@ export function createStatusTool(runtime: ToolRuntime) {
       const loops = services.runs.getLoops(run.id);
       const notes = services.runs.listNotes(run.id);
       const events = services.runs.listRecentEvents(run.id, 10);
+      const recentToolCalls = services.runs.listRecentToolCalls(run.id, 10);
+      const messageTotals = services.runs.messageTotals(run.id);
+      const counters = {
+        tool_calls: services.runs.countToolCalls(run.id),
+        tool_failures: services.runs.countToolFailures(run.id),
+        gate_denials: services.runs.countEvents(run.id, "gate.denied"),
+        gate_unresolved: services.runs.countEvents(run.id, "gate.unresolved"),
+        loops: loops.reduce((total, loop) => total + Number(loop.count), 0),
+        messages: messageTotals.messages,
+        tokens_in: messageTotals.tokens_in,
+        tokens_out: messageTotals.tokens_out,
+        cost: messageTotals.cost,
+      };
       const profile = stackService(runtime).resolveForRun(run, false).profile;
       const gate = validatePhaseGate({
         phase: run.phase,
@@ -66,6 +79,7 @@ export function createStatusTool(runtime: ToolRuntime) {
           phase: run.phase,
           gate: gatePayload(gate),
           loops: loopSummary,
+          counters,
           notes: notes.length,
           open_lessons: services.lessons.countOpen(),
           models: { warnings: modelWarnings },
@@ -74,9 +88,10 @@ export function createStatusTool(runtime: ToolRuntime) {
             at: event.at,
             data: parseJsonRecord(event.data_json),
           })),
+          recent_tool_calls: recentToolCalls.map(toolCallPayload),
           next_action: nextAction,
         },
-        renderStatus(run, gate, loopSummary, notes.length, services.lessons.countOpen(), nextAction),
+        renderStatus(run, gate, loopSummary, counters, notes.length, services.lessons.countOpen(), nextAction),
       );
     },
   });
@@ -117,6 +132,7 @@ function renderStatus(
   run: RunRow,
   gate: GateResult,
   loops: Record<string, number>,
+  counters: StatusCounters,
   notes: number,
   openLessons: number,
   nextAction: string,
@@ -124,11 +140,43 @@ function renderStatus(
   const loopText = Object.keys(loops).length === 0
     ? "none"
     : Object.entries(loops).map(([phase, count]) => `${phase}=${count}`).join(", ");
+  const toolText = counters.tool_calls === 0
+    ? "no tool calls"
+    : `${counters.tool_calls} tool calls (${counters.tool_failures} failed)`;
+  const messageText = counters.messages === 0
+    ? "no messages"
+    : `${counters.messages} messages, ${counters.tokens_in} in / ${counters.tokens_out} out tokens, $${counters.cost.toFixed(6)}`;
   return [
     `Run ${run.id}: ${run.title}`,
     `Status: ${run.status}; phase: ${run.phase}`,
     `Gate: ${gate.ok ? "open" : `blocked (${gate.code})`} — ${gate.message}`,
-    `Loops: ${loopText}; notes: ${notes}; open lessons: ${openLessons}.`,
+    `Loops: ${loopText} (${counters.loops} total); notes: ${notes}; open lessons: ${openLessons}.`,
+    `Tools: ${toolText}; gate denials: ${counters.gate_denials}; unresolved: ${counters.gate_unresolved}.`,
+    `Messages: ${messageText}.`,
     `Next: ${nextAction}`,
   ].join("\n");
+}
+
+interface StatusCounters {
+  readonly tool_calls: number;
+  readonly tool_failures: number;
+  readonly gate_denials: number;
+  readonly gate_unresolved: number;
+  readonly loops: number;
+  readonly messages: number;
+  readonly tokens_in: number;
+  readonly tokens_out: number;
+  readonly cost: number;
+}
+
+function toolCallPayload(row: ToolCallRow): Record<string, unknown> {
+  return {
+    tool: row.tool,
+    at: row.started_at,
+    agent: row.agent,
+    phase: row.phase,
+    ok: row.ok === null ? null : row.ok === 1,
+    duration_ms: row.duration_ms,
+    output_bytes: row.output_bytes,
+  };
 }
