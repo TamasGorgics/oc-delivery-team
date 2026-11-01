@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1
+
+- Correct GitHub-based installation and upgrade instructions; no local checkout or project `node_modules` is required.
+- Add a GitHub Actions CI workflow for typechecking, tests, prompt neutrality, and package-manifest checks.
+- Add Code Mode guidance to every effective prompt, including approved prompt overrides.
+- Enforce exact run artifact paths and prevent one role from persisting another role's artifact.
+- Move the specification and roadmap under `docs/` and keep them out of the published package.
+
 ## 0.1.0
 
 Initial release.
