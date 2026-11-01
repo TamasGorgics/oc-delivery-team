@@ -8,6 +8,7 @@ import spec from "./spec";
 import teamLead from "./team-lead";
 import tester from "./tester";
 import type { RoleId } from "../roles";
+import { withCodeModeGuidance } from "./code-mode";
 
 export const DEFAULT_PROMPTS: Readonly<Record<RoleId, string>> = {
   "team-lead": teamLead,
@@ -22,5 +23,5 @@ export const DEFAULT_PROMPTS: Readonly<Record<RoleId, string>> = {
 };
 
 export function getDefaultPrompt(role: RoleId): string {
-  return DEFAULT_PROMPTS[role];
+  return withCodeModeGuidance(DEFAULT_PROMPTS[role]);
 }

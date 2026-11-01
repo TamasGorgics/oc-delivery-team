@@ -4,7 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { runTeamCli } from "../../src/cli/team";
 import deliveryTeam from "../../src/index";
-import { DEFAULT_PROMPTS } from "../../src/prompts";
+import { getDefaultPrompt } from "../../src/prompts";
+import { withCodeModeGuidance } from "../../src/prompts/code-mode";
 import { promptProposalSha } from "../../src/prompts/proposals";
 import { openDatabase } from "../../src/state/db";
 import { PromptRepository } from "../../src/state/prompts";
@@ -168,13 +169,13 @@ describe("team prompts CLI", () => {
     const firstCleanup = await deliveryTeam.setup(first.context);
     requireCleanup(firstCleanup);
     try {
-      expect(first.state.agents.get("developer")?.system).toBe(DEFAULT_PROMPTS.developer);
+      expect(first.state.agents.get("developer")?.system).toBe(getDefaultPrompt("developer"));
       const approved = await cli(projectDir, [
         "prompts", "approve", proposalFile, "--root", rootDir,
       ]);
       expect(approved.code).toBe(0);
       expect(approved.json()).toMatchObject({ restart_required: true, prompt: { status: "approved" } });
-      expect(first.state.agents.get("developer")?.system).toBe(DEFAULT_PROMPTS.developer);
+      expect(first.state.agents.get("developer")?.system).toBe(getDefaultPrompt("developer"));
     } finally {
       await firstCleanup();
     }
@@ -183,7 +184,7 @@ describe("team prompts CLI", () => {
     const restartedCleanup = await deliveryTeam.setup(restarted.context);
     requireCleanup(restartedCleanup);
     try {
-      expect(restarted.state.agents.get("developer")?.system).toBe(proposalText);
+      expect(restarted.state.agents.get("developer")?.system).toBe(withCodeModeGuidance(proposalText));
     } finally {
       await restartedCleanup();
     }

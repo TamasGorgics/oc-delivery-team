@@ -196,6 +196,16 @@ Approving a prompt moves it to `.team/prompts/<role>.md`, supersedes the previou
 
 Lessons are injected only after human approval. Proposed lessons and proposed prompts are never active.
 
+## Code Mode
+
+OpenCode's `execute` tool runs a restricted JavaScript-like sandbox, not unrestricted TypeScript or Node. In Code Mode:
+
+- Call plugin tools as `tools.team_*`.
+- Do not use `import()`, `require()`, classes, BigInt, timers, filesystem APIs, or `fetch`.
+- Use the built-in `read`, `write`, and `shell` tools for file and command access.
+
+An `ImportExpression is not supported` error means the generated Code Mode script tried to import a module. It is not a plugin installation failure.
+
 ## Evaluation harness
 
 The eval harness exercises the plugin against fixture projects:

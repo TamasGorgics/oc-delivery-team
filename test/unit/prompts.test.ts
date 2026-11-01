@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_PROMPTS } from "../../src/prompts";
+import { DEFAULT_PROMPTS, getDefaultPrompt } from "../../src/prompts";
 import { ROLE_IDS } from "../../src/roles";
 
 const STACK_DENYLIST = [
@@ -44,6 +44,14 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("ask the human");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("team_worktree");
     expect(DEFAULT_PROMPTS.developer).toContain("unique short name");
+  });
+
+  test("adds Code Mode guidance to every effective prompt", () => {
+    for (const role of ROLE_IDS) {
+      expect(getDefaultPrompt(role)).toContain("## Code Mode runtime");
+      expect(getDefaultPrompt(role)).toContain("tools.team_*");
+      expect(getDefaultPrompt(role)).toContain("Do not use `import()`");
+    }
   });
 
   test("contains no unlabeled stack-specific command examples", () => {

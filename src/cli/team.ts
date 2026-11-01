@@ -30,6 +30,7 @@ import { renderRunReport } from "../state/report";
 import { listTeamWorktrees } from "../state/worktrees";
 import { StackService } from "../stack/service";
 import { getDefaultPrompt } from "../prompts";
+import { withCodeModeGuidance } from "../prompts/code-mode";
 import { promptProposalSha, scanPromptProposals } from "../prompts/proposals";
 import { promptProposalPathFromArgument, renderPromptDiff } from "./prompts";
 import {
@@ -939,7 +940,9 @@ function readCurrentPrompt(rootDir: string, role: RoleId): { readonly text: stri
     throw new CliCommandError("Current prompt path must be a regular file.", "unsafe_path");
   }
   const text = readFileSync(currentPath, "utf8").trim();
-  return text ? { text, label: `prompts/${role}.md` } : { text: fallback, label: `built-in:${role}` };
+  return text
+    ? { text: withCodeModeGuidance(text), label: `prompts/${role}.md` }
+    : { text: fallback, label: `built-in:${role}` };
 }
 
 function ensurePlainDirectory(rootDir: string, name: "prompts"): string {
