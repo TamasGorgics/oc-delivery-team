@@ -362,7 +362,7 @@ Concrete probes to run:
 - [x] Implement prompt proposals: retro writes a complete proposed prompt to `<root>/proposals/<role>.<ts>.md`; record a `prompt_versions` row on transition out of retro by scanning the directory.
 - [x] Implement CLI: `team prompts list|approve|reject|diff`; approval moves the proposal to `<root>/prompts/<role>.md`, supersedes the previous version, and documents restart as the application path.
 - [x] Add an approved-prompt restart test and document the restart path; ensure pending proposals are never used.
-- [ ] Test: proposed lessons are never injected; approved are injected within `topN`/`budgetChars`; duplicate detection; stack filtering; stable ordering; role fallback; performance budget.
+- [x] Test: proposed lessons are never injected; approved are injected within `topN`/`budgetChars`; duplicate detection; stack filtering; stable ordering; role fallback; performance budget.
 
 ### Acceptance
 

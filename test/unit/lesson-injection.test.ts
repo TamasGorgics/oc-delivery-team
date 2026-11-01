@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { performance } from "node:perf_hooks";
 import os from "node:os";
 import path from "node:path";
 import { parseConfig } from "../../src/config";
@@ -403,6 +404,47 @@ describe("request-hook lesson injection", () => {
 
     const rows = await withRepo(harness, (lessons) => lessons.list());
     expect(rows.map((row) => row.hit_count)).toEqual([0]);
+  });
+
+  test("keeps warmed lesson injection under the 10ms typical latency budget", async () => {
+    await withDirectRuntime(({ rootDir, lessons, runtime }) => {
+      const runDirectory = path.join(rootDir, "runs", "run-1");
+      mkdirSync(runDirectory, { recursive: true });
+      writeFileSync(
+        runArtifactPath(rootDir, "run-1", "spec.md"),
+        `${"Run the documented verification and record evidence before the change is merged. ".repeat(100)}\n`
+          + "<!-- team-footer -->\nSTATUS: APPROVED\n<!-- /team-footer -->\n",
+        "utf8",
+      );
+      for (let index = 0; index < 100; index += 1) {
+        insertLesson(
+          lessons,
+          "*",
+          `Use the documented verification checklist for delivery case ${index} before merging.`,
+          "*",
+        );
+      }
+
+      const handler = createLessonInjectionHandler(runtime);
+      const invoke = () => handler({ sessionID: "session-1", agent: "developer", system: [] });
+      for (let index = 0; index < 5; index += 1) expect(invoke().kind).toBe("injected");
+
+      const samples: number[] = [];
+      for (let index = 0; index < 31; index += 1) {
+        const start = performance.now();
+        const outcome = invoke();
+        samples.push(performance.now() - start);
+        expect(outcome.kind).toBe("injected");
+      }
+      samples.sort((left, right) => left - right);
+      const medianMs = samples[Math.floor(samples.length / 2)] ?? Number.POSITIVE_INFINITY;
+      const p95Ms = samples[Math.ceil(samples.length * 0.95) - 1] ?? Number.POSITIVE_INFINITY;
+
+      expect(medianMs).toBeLessThan(10);
+      // Keep a generous tail guard to catch accidental scans or unbounded work without
+      // making this machine-sensitive check flaky under short-lived host contention.
+      expect(p95Ms).toBeLessThan(50);
+    });
   });
 });
 
