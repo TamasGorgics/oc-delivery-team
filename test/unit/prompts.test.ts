@@ -49,6 +49,9 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("never ask a different role to persist another role's artifact");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("If a subagent reaches its step limit");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("do not use another role as a scribe");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("spec and plan -> spec");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("built-in read-only plan agent");
+    expect(DEFAULT_PROMPTS.spec).toContain("You own both the spec and plan phases");
     expect(DEFAULT_PROMPTS.developer).toContain("unique short name");
   });
 

@@ -181,6 +181,8 @@ describe("tool registration and team_start", () => {
     }
 
     const status = await call(harness, "team_status", { run });
+    expect(status.owner).toBe("researcher");
+    expect(status.next_action).toContain("Owner: researcher");
     expect(status.counters).toMatchObject({
       tool_calls: 2,
       tool_failures: 1,

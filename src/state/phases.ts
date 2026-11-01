@@ -1,3 +1,5 @@
+import type { RoleId } from "../roles";
+
 export const PHASES = [
   "brainstorm",
   "spec",
@@ -12,6 +14,19 @@ export const PHASES = [
 ] as const;
 
 export type Phase = (typeof PHASES)[number];
+
+export const PHASE_OWNERS: Readonly<Record<Phase, RoleId | null>> = {
+  brainstorm: "researcher",
+  spec: "spec",
+  plan: "spec",
+  implement: "developer",
+  test: "tester",
+  qa: "qa",
+  adversary: "adversary",
+  docs: "docs",
+  retro: "retro",
+  done: null,
+};
 
 export const ARTIFACT_PHASES = [
   "brainstorm",

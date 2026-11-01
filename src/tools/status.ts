@@ -1,4 +1,5 @@
 import { validatePhaseGate, type GateResult } from "../state/artifacts";
+import { PHASE_OWNERS } from "../state/phases";
 import { parseJsonRecord, type RunRow, type ToolCallRow } from "../state/runs";
 import { StackService } from "../stack/service";
 import {
@@ -69,7 +70,8 @@ export function createStatusTool(runtime: ToolRuntime) {
         .filter((event) => event.kind.startsWith("model."))
         .map((event) => ({ kind: event.kind, data: parseJsonRecord(event.data_json) }));
       const loopSummary = loopCounts(loops);
-      const nextAction = nextActionFor(run, gate);
+      const owner = PHASE_OWNERS[run.phase];
+      const nextAction = nextActionFor(run, gate, owner);
 
       return ok(
         {
@@ -77,6 +79,7 @@ export function createStatusTool(runtime: ToolRuntime) {
           title: run.title,
           status: run.status,
           phase: run.phase,
+          owner,
           gate: gatePayload(gate),
           loops: loopSummary,
           counters,
@@ -91,7 +94,7 @@ export function createStatusTool(runtime: ToolRuntime) {
           recent_tool_calls: recentToolCalls.map(toolCallPayload),
           next_action: nextAction,
         },
-        renderStatus(run, gate, loopSummary, counters, notes.length, services.lessons.countOpen(), nextAction),
+        renderStatus(run, gate, owner, loopSummary, counters, notes.length, services.lessons.countOpen(), nextAction),
       );
     },
   });
@@ -121,16 +124,17 @@ function loopCounts(loops: readonly { readonly phase: string; readonly count: nu
   return Object.fromEntries(loops.map((loop) => [loop.phase, Number(loop.count)]));
 }
 
-function nextActionFor(run: RunRow, gate: GateResult): string {
+function nextActionFor(run: RunRow, gate: GateResult, owner: string | null): string {
   if (run.status !== "open") return "The run is not open; inspect the status or start a new run.";
   if (run.phase === "done") return "The run is done and terminal.";
   if (gate.ok) return "Call team_advance to move to the next phase.";
-  return gate.message;
+  return owner ? `${gate.message} Owner: ${owner}.` : gate.message;
 }
 
 function renderStatus(
   run: RunRow,
   gate: GateResult,
+  owner: string | null,
   loops: Record<string, number>,
   counters: StatusCounters,
   notes: number,
@@ -148,7 +152,7 @@ function renderStatus(
     : `${counters.messages} messages, ${counters.tokens_in} in / ${counters.tokens_out} out tokens, $${counters.cost.toFixed(6)}`;
   return [
     `Run ${run.id}: ${run.title}`,
-    `Status: ${run.status}; phase: ${run.phase}`,
+    `Status: ${run.status}; phase: ${run.phase}; owner: ${owner ?? "none"}`,
     `Gate: ${gate.ok ? "open" : `blocked (${gate.code})`} — ${gate.message}`,
     `Loops: ${loopText} (${counters.loops} total); notes: ${notes}; open lessons: ${openLessons}.`,
     `Tools: ${toolText}; gate denials: ${counters.gate_denials}; unresolved: ${counters.gate_unresolved}.`,

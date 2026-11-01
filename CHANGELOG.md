@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- Add explicit phase-to-role ownership, with both `spec` and `plan` owned by the `spec` subagent.
+- Prevent the lead from launching the built-in read-only `plan` agent or using a scribe role.
+- Expose the current phase owner in `team_status` and blocked next actions.
+- Document the ownership map in the README and architecture guide.
+
 ## 0.1.2
 
 - Raise the spec agent's step budget from 20 to 40 for its two artifacts.

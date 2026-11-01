@@ -25,6 +25,22 @@ A run moves through:
 
 `brainstorm -> spec -> plan -> implement -> test -> qa -> adversary -> docs -> retro -> done`
 
+Phase ownership is fixed:
+
+| Phase | Owner |
+|---|---|
+| brainstorm | researcher |
+| spec | spec |
+| plan | spec |
+| implement | developer |
+| test | tester |
+| qa | qa |
+| adversary | adversary |
+| docs | docs |
+| retro | retro |
+
+The spec subagent owns both `spec.md` and `plan.md`. OpenCode's built-in `plan` agent is not part of this team.
+
 `team_advance` evaluates the current phase gate before changing state. Gates require the expected artifact and machine-readable footer; the spec gate additionally requires a human approval decision note. `team_rewind` moves work backward, and loop counters escalate at the configured cap. State changes and phase transitions are persisted in SQLite.
 
 `team_status` reports the current phase, gate result, counters, loops, notes, and recent events. Entering `retro` writes a Markdown report to the run directory, and advancing out of `retro` closes the run.

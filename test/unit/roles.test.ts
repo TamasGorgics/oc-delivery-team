@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { PHASE_OWNERS } from "../../src/state/phases";
 import { enabledRoles, ROLE_BY_ID, ROLE_IDS, rolePermissionRules } from "../../src/roles";
 
 describe("role definitions", () => {
@@ -26,6 +27,22 @@ describe("role definitions", () => {
     expect(ROLE_BY_ID.retro).toMatchObject({ tier: "reasoning", maxSteps: 20, writeScope: "root" });
     expect(ROLE_IDS.every((id) => ROLE_BY_ID[id].promptId === id)).toBe(true);
     expect(ROLE_IDS.every((id) => ROLE_BY_ID[id].toolNeeds.length > 0)).toBe(true);
+  });
+
+  test("maps every phase to the owning team role", () => {
+    expect(PHASE_OWNERS).toMatchObject({
+      brainstorm: "researcher",
+      spec: "spec",
+      plan: "spec",
+      implement: "developer",
+      test: "tester",
+      qa: "qa",
+      adversary: "adversary",
+      docs: "docs",
+      retro: "retro",
+      done: null,
+    });
+    expect(ROLE_IDS).not.toContain("plan");
   });
 
   test("gives every artifact-writing role a write-capable toolset", () => {
