@@ -51,6 +51,8 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("do not use another role as a scribe");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("spec and plan -> spec");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("built-in read-only plan agent");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("The plan phase is verification-only");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("never compile a draft");
     expect(DEFAULT_PROMPTS.spec).toContain("You own both the spec and plan phases");
     expect(DEFAULT_PROMPTS.developer).toContain("unique short name");
   });

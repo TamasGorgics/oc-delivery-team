@@ -27,7 +27,7 @@ Add the package tag to the project's `opencode.json`:
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "github:TamasGorgics/oc-delivery-team#v0.1.3",
+      "package": "github:TamasGorgics/oc-delivery-team#v0.1.4",
       "options": {
         "root": ".team",
         "maxLoops": 3
@@ -39,14 +39,14 @@ Add the package tag to the project's `opencode.json`:
 
 OpenCode installs the package into its plugin cache and resolves the tag. Every developer using the project gets the same plugin version without cloning this repository.
 
-Pin the tag. To upgrade, change `#v0.1.3` to the newer release tag and restart OpenCode. Use the same tag everywhere below.
+Pin the tag. To upgrade, change `#v0.1.4` to the newer release tag and restart OpenCode. Use the same tag everywhere below.
 
 ### Global plugin
 
 If you want the plugin in every project, install it through OpenCode instead:
 
 ```sh
-opencode plugin add 'github:TamasGorgics/oc-delivery-team#v0.1.3'
+opencode plugin add 'github:TamasGorgics/oc-delivery-team#v0.1.4'
 opencode plugin list
 ```
 
@@ -57,14 +57,14 @@ This writes the package entry to the global OpenCode config. Edit that entry to 
 The `team` CLI is a separate executable. Install it globally from the same GitHub tag:
 
 ```sh
-npm install --global 'github:TamasGorgics/oc-delivery-team#v0.1.3'
+npm install --global 'github:TamasGorgics/oc-delivery-team#v0.1.4'
 team --help
 ```
 
 Or run it one-off without a global install:
 
 ```sh
-npx --yes --package 'github:TamasGorgics/oc-delivery-team#v0.1.3' team --help
+npx --yes --package 'github:TamasGorgics/oc-delivery-team#v0.1.4' team --help
 ```
 
 Bun must be installed and available on `PATH` because the package entry and CLI are TypeScript. To upgrade the CLI, run the install command with the new tag.
@@ -82,7 +82,7 @@ Bun must be installed and available on `PATH` because the package entry and CLI 
 
    `brainstorm -> spec -> plan -> implement -> test -> qa -> adversary -> docs -> retro -> done`
 
-   The `spec` subagent owns both the `spec` and `plan` phases. The built-in read-only `plan` agent is not part of this team.
+   The `spec` subagent owns both the `spec` and `plan` phases. The `plan` phase is verification-only when `plan.md` already exists; if it is missing, re-dispatch `spec`. The built-in read-only `plan` agent is not part of this team.
 
 4. Approve `spec.md` when the lead asks. The spec gate requires both `STATUS: APPROVED` and a decision note recording human approval.
 5. When the run finishes, inspect it with:
@@ -247,7 +247,7 @@ This repository can be loaded directly during development through `.opencode/plu
 
 ### Developing the plugin with itself
 
-Yes, you can use the plugin to develop the plugin. OpenCode in this checkout already loads the local source through `.opencode/plugins/delivery-team/index.ts`; do not configure the published `github:...#v0.1.3` package for self-development, or you will run the released code instead of your working tree.
+Yes, you can use the plugin to develop the plugin. OpenCode in this checkout already loads the local source through `.opencode/plugins/delivery-team/index.ts`; do not configure the published `github:...#v0.1.4` package for self-development, or you will run the released code instead of your working tree.
 
 1. Start with a clean branch and run `/team` from this repository.
 2. Let the lead drive the normal phase gates. Source edits are blocked before `implement`; the developer and tester edit and run the project's Stack Profile commands.

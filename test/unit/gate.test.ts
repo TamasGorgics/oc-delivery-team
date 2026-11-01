@@ -571,6 +571,28 @@ describe("CLI approval bypass", () => {
   });
 });
 
+describe("delivery-team subagent guard", () => {
+  test("blocks the built-in plan agent while a run is active", async () => {
+    const harness = await createGateHarness();
+    startRun(harness);
+    const handler = createGateHandler(harness.runtime);
+
+    const blocked = denial(() => handler(event(
+      "subagent",
+      { agent: "plan", prompt: "Draft a plan." },
+      { agent: "team-lead" },
+    )));
+    expect(blocked.code).toBe("plan_agent_blocked");
+    expect(blocked.message).toContain("spec subagent");
+
+    expect(() => handler(event(
+      "subagent",
+      { agent: "spec", prompt: "Write the specification and plan." },
+      { agent: "team-lead" },
+    ))).not.toThrow();
+  });
+});
+
 describe("gate integration through the plugin", () => {
   test("blocks and allows edits through the registered execute.before hook", async () => {
     const { fake } = await setupPlugin();

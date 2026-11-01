@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+- Block the built-in read-only `plan` agent during active delivery runs.
+- Make the plan phase verification-only; `spec` owns `plan.md` and is re-dispatched only when it is missing.
+- Add plan-specific next-action guidance and prevent draft compilation or scribe fallbacks.
+- Add gate, prompt, and status regression tests.
+
 ## 0.1.3
 
 - Add explicit phase-to-role ownership, with both `spec` and `plan` owned by the `spec` subagent.

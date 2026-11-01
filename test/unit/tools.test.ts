@@ -199,6 +199,23 @@ describe("tool registration and team_start", () => {
     expect(status.text).toBeUndefined();
   });
 
+  test("team_status makes the plan phase a spec-owned verification step", async () => {
+    const harness = await setup();
+    const started = await call(harness, "team_start", { title: "Plan ownership" });
+    const run = started.run as string;
+    const { db } = await openDatabase(path.join(harness.rootDir, "team.db"));
+    try {
+      new RunRepository(db).updatePhase(run, "plan");
+    } finally {
+      db.close();
+    }
+
+    const status = await call(harness, "team_status", { run });
+    expect(status).toMatchObject({ phase: "plan", owner: "spec" });
+    expect(status.next_action).toContain("never use the built-in plan agent");
+    expect(status.next_action).toContain("Re-dispatch the spec subagent");
+  });
+
   test("team_start creates the run, artifact directory, session binding, transitions, and model rows", async () => {
     const harness = await setup();
     const result = await call(harness, "team_start", {

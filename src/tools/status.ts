@@ -128,6 +128,9 @@ function nextActionFor(run: RunRow, gate: GateResult, owner: string | null): str
   if (run.status !== "open") return "The run is not open; inspect the status or start a new run.";
   if (run.phase === "done") return "The run is done and terminal.";
   if (gate.ok) return "Call team_advance to move to the next phase.";
+  if (run.phase === "plan") {
+    return `${gate.message} Re-dispatch the spec subagent to write plan.md; never use the built-in plan agent.`;
+  }
   return owner ? `${gate.message} Owner: ${owner}.` : gate.message;
 }
 

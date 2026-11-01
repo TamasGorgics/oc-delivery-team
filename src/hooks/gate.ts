@@ -2,6 +2,7 @@ import path from "node:path";
 import {
   extractEditedPaths,
   extractShellCommand,
+  extractSubagentAgent,
   roleIdFromAgent,
   type PluginContext,
 } from "../compat";
@@ -28,6 +29,7 @@ export type GateDenialCode =
   | "scope_root"
   | "scope_outside_project"
   | "cli_approval_blocked"
+  | "plan_agent_blocked"
   | "unresolved_run";
 
 export interface GateTrace {
@@ -133,6 +135,19 @@ export function evaluateGate(
   const run = resolved.run;
   if (!isPhase(run.phase)) return unresolved(`Run ${run.id} has an invalid phase.`, traces, run);
   const phase = run.phase;
+
+  if (extractSubagentAgent(event.tool, event.input) === "plan") {
+    return deny(
+      "plan_agent_blocked",
+      [
+        "The built-in read-only plan agent cannot write delivery artifacts.",
+        "Use the spec subagent for the plan phase; if plan.md is missing, re-dispatch spec with the exact artifact directory.",
+      ].join(" "),
+      traces,
+      run,
+      phase,
+    );
+  }
 
   if (editTool) {
     const extraction = extractEditedPaths(event.tool, event.input, runtime.config.gating.pathKeys);

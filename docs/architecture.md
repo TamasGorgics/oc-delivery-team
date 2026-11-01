@@ -39,7 +39,7 @@ Phase ownership is fixed:
 | docs | docs |
 | retro | retro |
 
-The spec subagent owns both `spec.md` and `plan.md`. OpenCode's built-in `plan` agent is not part of this team.
+The spec subagent owns both `spec.md` and `plan.md`. The `plan` phase is verification-only when `plan.md` exists; if it is missing, the lead re-dispatches `spec`. OpenCode's built-in `plan` agent is not part of this team, and the gate blocks it during an active run.
 
 `team_advance` evaluates the current phase gate before changing state. Gates require the expected artifact and machine-readable footer; the spec gate additionally requires a human approval decision note. `team_rewind` moves work backward, and loop counters escalate at the configured cap. State changes and phase transitions are persisted in SQLite.
 

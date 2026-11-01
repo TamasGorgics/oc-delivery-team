@@ -216,6 +216,17 @@ export function isShellTool(tool: string): boolean {
   return SHELL_TOOLS.has(tool);
 }
 
+/** Extract the target agent from the host's subagent/task tool input. */
+export function extractSubagentAgent(tool: string, input: unknown): string | undefined {
+  if (tool !== "subagent" && tool !== "task") return undefined;
+  const record = toolInputObject(input);
+  for (const key of ["agent", "subagent_type", "subagentType"] as const) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
 export function extractShellCommand(tool: string, input: unknown): string | undefined {
   if (!isShellTool(tool)) return undefined;
   const record = toolInputObject(input);
