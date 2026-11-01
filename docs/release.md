@@ -49,11 +49,33 @@ Create a directory outside this repository. Install the generated tarball in a f
 
 Start OpenCode and verify:
 
-- the plugin appears in `/api/plugin`;
-- the nine role agents and `team`, `team-status`, and `team-retro` commands are available;
+- the plugin appears in `/api/plugin` for a global install, or all nine role agents and the `team`, `team-status`, and `team-retro` commands appear for a project install;
 - `team runs`, `team report`, and `team db migrate` work from the installed package;
 - a toy `/team` run reaches at least the first gated phase;
 - `team report <run>` renders the Markdown report.
+
+Also repeat the check using the public GitHub install paths from the README:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "github:TamasGorgics/oc-delivery-team#vX.Y.Z",
+      "options": { "root": ".team" }
+    }
+  ]
+}
+```
+
+Confirm the same agents/commands load with no repository checkout. Then verify:
+
+```sh
+opencode plugin add 'github:TamasGorgics/oc-delivery-team#vX.Y.Z'
+npm install --global 'github:TamasGorgics/oc-delivery-team#vX.Y.Z'
+team --help
+npx --yes --package 'github:TamasGorgics/oc-delivery-team#vX.Y.Z' team --help
+```
 
 A model-provider call is required for the full quick-start check. If the provider is unavailable, record the limitation and do not mark the quick-start acceptance complete; still verify plugin loading and CLI paths without a model.
 

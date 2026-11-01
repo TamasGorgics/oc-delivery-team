@@ -14,26 +14,18 @@ The plugin stores machine state in SQLite and human-readable artifacts under `.t
 
 ## Install
 
-Install the package in the project that OpenCode will open:
+The package is distributed from GitHub tags while it is pre-1.0. You do **not** need a local checkout, and you do not need to add the plugin to the project's `node_modules`.
 
-```sh
-bun add opencode-delivery-team
-```
+### Project plugin
 
-For a local tarball:
-
-```sh
-npm install /absolute/path/to/opencode-delivery-team-0.1.0.tgz
-```
-
-Add the installed package to `opencode.json`. The local package path works for both tarball and registry installs; it is also what `opencode` uses for a package loaded from the project:
+Add the package tag to the project's `opencode.json`:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "./node_modules/opencode-delivery-team",
+      "package": "github:TamasGorgics/oc-delivery-team#v0.1.0",
       "options": {
         "root": ".team",
         "maxLoops": 3
@@ -43,7 +35,37 @@ Add the installed package to `opencode.json`. The local package path works for b
 }
 ```
 
-If you manage plugins globally, `opencode plugin add opencode-delivery-team` installs and records a registry package instead. Restart OpenCode after changing plugin options or approving a prompt override.
+OpenCode installs the package into its plugin cache and resolves the tag. Every developer using the project gets the same plugin version without cloning this repository.
+
+Pin the tag. To upgrade, change `#v0.1.0` to the newer release tag and restart OpenCode. Use the same tag everywhere below.
+
+### Global plugin
+
+If you want the plugin in every project, install it through OpenCode instead:
+
+```sh
+opencode plugin add 'github:TamasGorgics/oc-delivery-team#v0.1.0'
+opencode plugin list
+```
+
+This writes the package entry to the global OpenCode config. Edit that entry to add plugin options if needed.
+
+### Human CLI
+
+The `team` CLI is a separate executable. Install it globally from the same GitHub tag:
+
+```sh
+npm install --global 'github:TamasGorgics/oc-delivery-team#v0.1.0'
+team --help
+```
+
+Or run it one-off without a global install:
+
+```sh
+npx --yes --package 'github:TamasGorgics/oc-delivery-team#v0.1.0' team --help
+```
+
+Bun must be installed and available on `PATH` because the package entry and CLI are TypeScript. To upgrade the CLI, run the install command with the new tag.
 
 ## Quick start
 
@@ -62,8 +84,8 @@ If you manage plugins globally, `opencode plugin add opencode-delivery-team` ins
 5. When the run finishes, inspect it with:
 
    ```sh
-   bunx -p opencode-delivery-team team runs
-   bunx -p opencode-delivery-team team report <run-id>
+   team runs
+   team report <run-id>
    ```
 
 The first command writes a database at `.team/team.db`. Use `--root <dir>` to select a different data root or `--db <file>` to override the database path.
@@ -156,16 +178,16 @@ Agents may propose lessons and complete prompt overrides, but they cannot approv
 
 ```sh
 # Lessons
-bunx -p opencode-delivery-team team lessons [--status proposed]
-bunx -p opencode-delivery-team team lessons approve|reject|retire <id>
-bunx -p opencode-delivery-team team lessons export
-bunx -p opencode-delivery-team team lessons stale
+team lessons [--status proposed]
+team lessons approve|reject|retire <id>
+team lessons export
+team lessons stale
 
 # Prompt overrides
-bunx -p opencode-delivery-team team prompts list
-bunx -p opencode-delivery-team team prompts diff <role.timestamp>
-bunx -p opencode-delivery-team team prompts approve <role.timestamp>
-bunx -p opencode-delivery-team team prompts reject <role.timestamp>
+team prompts list
+team prompts diff <role.timestamp>
+team prompts approve <role.timestamp>
+team prompts reject <role.timestamp>
 ```
 
 Approving a prompt moves it to `.team/prompts/<role>.md`, supersedes the previous version, and returns `restart_required: true`. The CLI runs outside the plugin host, so restart OpenCode to apply the approved prompt. A prompt file is used only when its SHA matches an approved `prompt_versions` row; direct edits are ignored.
@@ -177,9 +199,9 @@ Lessons are injected only after human approval. Proposed lessons and proposed pr
 The eval harness exercises the plugin against fixture projects:
 
 ```sh
-bunx -p opencode-delivery-team team eval run
-bunx -p opencode-delivery-team team eval run ts-slug --models host-default
-bunx -p opencode-delivery-team team eval report --by prompt_set_sha
+team eval run
+team eval run ts-slug --models host-default
+team eval report --by prompt_set_sha
 ```
 
 Tasks live in `evals/tasks/` and model presets in `evals/models/`. The runner copies a fixture into a temporary project, uses the fixture's own Stack Profile commands, and stores one `eval_runs` row per task. Tests inject a fake runner; a live `team eval run` uses the OpenCode headless CLI and needs a configured model/provider.
