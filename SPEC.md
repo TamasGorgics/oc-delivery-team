@@ -602,11 +602,11 @@ Agents must have **no** way to invoke these (they are not tools). Note in docs: 
 
 ## 13. Parallelism & worktrees
 
-- With `worktrees.enabled`, `team-lead` may run several `developer` subagents in parallel, each told to call `team_worktree` first and work only inside that path.
-- Merge strategy: the lead (not developers) integrates branches in the `implement` phase and records a `decision` note. Conflicts → `team_loop`.
-- All agents in all worktrees share one DB (§10.1). Verify with a concurrency test (§16).
-- Worktrees require a git repository. In a non-git project `team_worktree` returns an error and `team-lead` runs developers sequentially in place.
-- v1 does not clean up worktrees; `team runs` shows leftover worktrees (`git worktree list`) for manual removal.
+- With `worktrees.enabled`, `team-lead` may run independent `developer` tasks in parallel. Each developer calls `team_worktree` with the run id and a unique name first, then uses only the returned path (absolute paths for file tools; commands run from that worktree). If the tool is disabled or creation fails, the lead dispatches sequential developers in the main checkout.
+- Merge strategy: the read-only lead coordinates integration by assigning a developer to the main checkout. That developer merges the reported `team/<run>/<name>` branches during `implement`, resolves conflicts, and runs Stack Profile checks; the lead reviews the outcome and records a `decision` note. Conflicts that need replanning use `team_loop`.
+- Worktrees share the main repository's `.team/` database and run artifacts (§10.1). Verify with separate worker processes that trace writes and run advances on the shared WAL database do not return `SQLITE_BUSY` (§16).
+- Worktrees require a Git repository. In a non-Git project `team_worktree` returns a clear error and `team-lead` falls back to sequential developers in place.
+- v1 does not clean up worktrees. `team runs` lists delivery-team branches from `git worktree list` for manual cleanup.
 
 ---
 

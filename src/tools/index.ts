@@ -7,10 +7,11 @@ import { createRewindTool } from "./rewind";
 import { createStackTools } from "./stack";
 import { createStartTool } from "./start";
 import { createStatusTool } from "./status";
+import { createWorktreeTool } from "./worktree";
 import type { ToolRuntime } from "./runtime";
 
 export function createTeamTools(runtime: ToolRuntime): readonly ToolInfo[] {
-  return [
+  const tools: ToolInfo[] = [
     createStartTool(runtime),
     createStatusTool(runtime),
     createAdvanceTool(runtime),
@@ -20,6 +21,8 @@ export function createTeamTools(runtime: ToolRuntime): readonly ToolInfo[] {
     createNoteTool(runtime),
     ...createStackTools(runtime),
   ];
+  if (runtime.config.worktrees.enabled) tools.push(createWorktreeTool(runtime));
+  return tools;
 }
 
 export type { ToolRuntime } from "./runtime";

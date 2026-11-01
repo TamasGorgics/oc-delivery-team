@@ -21,6 +21,7 @@ import { ensureDirectory, resolveMainRepoDirectory } from "../state/paths";
 import { PromptRepository, type PromptVersionRow } from "../state/prompts";
 import { redactSecrets, redactText } from "../state/privacy";
 import { renderRunReport } from "../state/report";
+import { listTeamWorktrees } from "../state/worktrees";
 import { StackService } from "../stack/service";
 import { getDefaultPrompt } from "../prompts";
 import { promptProposalSha, scanPromptProposals } from "../prompts/proposals";
@@ -262,12 +263,25 @@ async function runRuns(io: CliIO, args: ParsedArgs): Promise<number> {
     const runs = new RunRepository(db);
     const rows = runs.listRuns(args.open);
     const now = Date.now();
+    const worktreeList = listTeamWorktrees(paths.projectDir);
+    const worktrees = worktreeList.worktrees.map((worktree) => {
+      const run = runs.getRun(worktree.run);
+      return {
+        ...worktree,
+        run_status: run?.status ?? null,
+        run_phase: run?.phase ?? null,
+      };
+    });
     writeJson(io, {
       ok: true,
       database: paths.dbPath,
       open_only: args.open,
       count: rows.length,
       runs: rows.map((run) => runSummary(run, now)),
+      worktree_status: worktreeList.available ? "available" : "unavailable",
+      worktree_count: worktrees.length,
+      worktrees,
+      ...(worktreeList.error ? { worktree_warning: worktreeList.error } : {}),
     });
     return 0;
   } finally {

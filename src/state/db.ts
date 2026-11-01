@@ -64,14 +64,50 @@ export async function openDatabase(
   const driver = options.driver ?? (typeof Bun === "undefined" ? "node:sqlite" : "bun:sqlite");
   const db = driver === "bun:sqlite" ? await openBunDatabase(dbPath) : await openNodeDatabase(dbPath);
 
-  db.exec("PRAGMA journal_mode=WAL");
-  db.exec("PRAGMA busy_timeout=5000");
-  db.exec("PRAGMA foreign_keys=ON");
+  try {
+    db.exec("PRAGMA busy_timeout=5000");
+    db.exec("PRAGMA foreign_keys=ON");
+    if (dbPath !== ":memory:") await ensureWalJournalMode(db);
 
-  const migration = options.migrate === false
-    ? { fromVersion: 0, toVersion: 0, applied: [] }
-    : migrate(db, options.migrations);
-  return { db, migration };
+    const migration = options.migrate === false
+      ? { fromVersion: 0, toVersion: 0, applied: [] }
+      : migrate(db, options.migrations);
+    return { db, migration };
+  } catch (error) {
+    try {
+      db.close();
+    } catch {
+      // Preserve the setup failure if closing a broken connection also fails.
+    }
+    throw error;
+  }
+}
+
+async function ensureWalJournalMode(db: TeamDatabase): Promise<void> {
+  const retryDelays = [10, 25, 50, 100, 200, 400, 800] as const;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const current = db.get<{ journal_mode?: string }>("PRAGMA journal_mode");
+      if (current?.journal_mode?.toLowerCase() === "wal") return;
+      db.exec("PRAGMA journal_mode=WAL");
+      const enabled = db.get<{ journal_mode?: string }>("PRAGMA journal_mode");
+      if (enabled?.journal_mode?.toLowerCase() !== "wal") {
+        throw new Error(`Could not enable SQLite WAL mode (received ${enabled?.journal_mode ?? "no mode"}).`);
+      }
+      return;
+    } catch (error) {
+      const delay = retryDelays[attempt];
+      if (delay === undefined || !isSqliteBusyError(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
+function isSqliteBusyError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const code = "code" in error && typeof error.code === "string" ? error.code : "";
+  return /^SQLITE_(?:BUSY|LOCKED)/.test(code)
+    || (error instanceof Error && /database is (?:locked|busy)/i.test(error.message));
 }
 
 async function openBunDatabase(dbPath: string): Promise<TeamDatabase> {

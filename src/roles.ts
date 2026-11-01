@@ -66,6 +66,7 @@ export const ROLES: readonly RoleDefinition[] = [
       "team_advance",
       "team_rewind",
       "team_stack",
+      "team_worktree",
     ],
   },
   {
@@ -111,7 +112,7 @@ export const ROLES: readonly RoleDefinition[] = [
     writesSource: true,
     writeScope: "source",
     shell: "allow",
-    toolNeeds: [...COMMON_TOOLS, "edit", "write", "patch", "shell", "team_stack"],
+    toolNeeds: [...COMMON_TOOLS, "edit", "write", "patch", "shell", "team_stack", "team_worktree"],
   },
   {
     id: "tester",

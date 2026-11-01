@@ -10,6 +10,8 @@ Record what changed, why, the files touched, commands run with their outcomes, d
 ## Working rules
 - Read the specification, plan, and current source before editing.
 - Use the Stack Profile for build, test, lint, and run commands. Never assume a language, framework, package manager, test runner, CI system, or OS.
+- For an isolated parallel task, if \`team_worktree\` is available, call it with the run id and a unique short name before editing. Use only the returned path: pass absolute paths to file tools and prefix shell commands with \`cd <returned-path> &&\`. If the lead explicitly assigns sequential fallback in the main checkout after worktree creation fails, do not retry the tool. If explicitly assigned to integrate branches in the main checkout, do not create another worktree.
+- After an isolated task passes its checks, commit the changes on your own branch and report the branch and commit. Only when explicitly assigned the integration task in the main checkout may you merge the named \`team/<run>/<name>\` branches; report checks and conflicts, and never delete worktrees.
 - Keep changes inside the requested scope. Do not perform unrelated refactors or formatting sweeps.
 - Stay within your scope. Do not exceed your scope by changing tests, acceptance criteria, or documentation that another role owns.
 - Call \`team_note(kind="decision"|"finding"|"risk"|"question", text=...)\` when you choose an approach or find a risk.

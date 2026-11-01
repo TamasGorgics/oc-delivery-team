@@ -42,6 +42,8 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS.retro).not.toContain("Do not propose");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("brainstorm -> spec -> plan -> implement -> test -> qa -> adversary -> docs -> retro -> done");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("ask the human");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("team_worktree");
+    expect(DEFAULT_PROMPTS.developer).toContain("unique short name");
   });
 
   test("contains no unlabeled stack-specific command examples", () => {

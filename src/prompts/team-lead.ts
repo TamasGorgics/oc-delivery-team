@@ -33,6 +33,12 @@ Call \`team_loop\` before you retry a failed step or re-dispatch a failed phase.
 - Never silently swap a role for another role.
 - When a subagent reports a failure, decide whether to rewind, retry once with a new instruction, or escalate.
 
+## Parallel implementation
+- If \`team_worktree\` is available, you may dispatch independent developer tasks in parallel during \`implement\`. Give each task a unique short worktree name and require its developer to call \`team_worktree\` first, then use only the returned path.
+- If worktree creation fails or the tool is unavailable, fall back to sequential developers in the main checkout; never ask parallel developers to share one worktree.
+- Collect each developer's branch and commit, then coordinate integration in the main checkout through a developer assigned to merge the reported \`team/<run>/<name>\` branches, resolve conflicts, and run the Stack Profile checks. Review the result and record an integration decision note before leaving \`implement\`.
+- Do not delete worktrees automatically; leave cleanup to a human.
+
 ## Notes and scope
 - Call \`team_note(kind="decision"|"finding"|"risk"|"question", text=...)\` for every decision the team must remember.
 - Use the Stack Profile for build, test, lint, and run commands. Never assume a language, framework, package manager, test runner, CI system, or OS.

@@ -14,7 +14,7 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 | **M3** | Gating hooks | M | M2 | ☑ Done |
 | **M4** | Observability: tracing, events, CLI reports | M | M2, M3 | ☑ Done |
 | **M5** | Learning loop: lessons, prompt proposals, approvals | L | M2, M4 | ☑ Done |
-| **M6** | Parallel worktrees and eval harness (optional flag) | L | M2, M4 | ☐ Not started |
+| **M6** | Parallel worktrees and eval harness (optional flag) | L | M2, M4 | ◐ In progress |
 | **M7** | Packaging, documentation, clean-install release | M | all | ☐ Not started |
 
 Legend: ☐ not started · ◐ in progress · ☑ done · ⊘ blocked.
@@ -383,14 +383,14 @@ Concrete probes to run:
 
 ### M6.1 — Worktrees and concurrency
 
-- [ ] Implement `team_worktree` only when `worktrees.enabled`; validate `name` against `^[a-z0-9-]{1,40}$`.
-- [ ] Require a git repository; create with `git worktree add <baseDir>/<run>-<name> -b team/<run>/<name>` using an args array, never shell interpolation.
-- [ ] In a non-git project, return a clear error; the lead falls back to sequential developers in place.
-- [ ] Return the path; never delete worktrees automatically.
-- [ ] Update the lead and developer prompts: the lead may run parallel developers; each developer calls `team_worktree` first and works only inside that path; the lead integrates branches in `implement` and records a decision note.
-- [ ] Document that all worktrees share the main-repo DB and that the lead integrates branches in `implement`.
-- [ ] Show leftover worktrees in `team runs` (via `git worktree list`) for manual cleanup.
-- [ ] Concurrency test: two processes/workers write trace rows and advance different runs on one WAL DB without `SQLITE_BUSY` failures.
+- [x] Implement `team_worktree` only when `worktrees.enabled`; validate `name` against `^[a-z0-9-]{1,40}$`.
+- [x] Require a git repository; create with `git worktree add <baseDir>/<run>-<name> -b team/<run>/<name>` using an args array, never shell interpolation.
+- [x] In a non-git project, return a clear error; the lead falls back to sequential developers in place.
+- [x] Return the path; never delete worktrees automatically.
+- [x] Update the lead and developer prompts: the lead may run parallel developers; each developer calls `team_worktree` first and works only inside that path; the lead coordinates branch integration in `implement` and records a decision note.
+- [x] Document that all worktrees share the main-repo DB and that the lead coordinates integration in `implement` through a developer assigned to the main checkout.
+- [x] Show leftover team worktrees in `team runs` (via `git worktree list`) for manual cleanup.
+- [x] Concurrency test: two processes/workers write trace rows and advance different runs on one WAL DB without `SQLITE_BUSY` failures.
 
 ### M6.2 — Evals
 
@@ -403,8 +403,8 @@ Concrete probes to run:
 
 ### Acceptance
 
-- [ ] Two worktrees are created for one run; concurrent writes succeed.
-- [ ] Worktree creation is blocked cleanly outside git; no worktree is auto-deleted.
+- [x] Two worktrees are created for one run; concurrent writes succeed.
+- [x] Worktree creation is blocked cleanly outside git; no worktree is auto-deleted.
 - [ ] The eval harness runs at least one fixture end to end, or ships as a documented stub with its interface tested.
 - [ ] Three ecosystem fixtures exist and use their own Stack Profile commands.
 - [ ] `team eval report` compares scores by prompt/model set.
