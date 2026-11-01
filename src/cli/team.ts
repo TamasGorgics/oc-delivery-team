@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
-import { readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { lstatSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { ROLE_IDS } from "../roles";
+import { ROLE_IDS, isRoleId, type RoleId } from "../roles";
 import {
   parseJsonRecord,
   RunRepository,
@@ -17,9 +18,13 @@ import {
   type LessonStatus,
 } from "../state/lessons";
 import { ensureDirectory, resolveMainRepoDirectory } from "../state/paths";
+import { PromptRepository, type PromptVersionRow } from "../state/prompts";
 import { redactSecrets, redactText } from "../state/privacy";
 import { renderRunReport } from "../state/report";
 import { StackService } from "../stack/service";
+import { getDefaultPrompt } from "../prompts";
+import { promptProposalSha, scanPromptProposals } from "../prompts/proposals";
+import { promptProposalPathFromArgument, renderPromptDiff } from "./prompts";
 import {
   LESSON_EXPORT_DIRNAME,
   STALE_MIN_HIT_COUNT,
@@ -59,6 +64,10 @@ Commands:
                                    Change a lesson's status and decided_at
   team lessons export              Write approved lessons to <root>/lessons-export
   team lessons stale               Report high-hit approved lessons without evidence
+  team prompts list                List proposed and decided prompt versions
+  team prompts approve <file>      Approve a proposal and require an OpenCode restart
+  team prompts reject <file>       Reject a proposal
+  team prompts diff <file>         Compare a proposal with the current prompt
 
 Options:
   --root <dir>     Data root (default: <main repo>/.team)
@@ -129,6 +138,9 @@ export async function runTeamCli(
     }
     if (command === "lessons") {
       return await runLessons(io, parsed, rest);
+    }
+    if (command === "prompts") {
+      return await runPrompts(io, parsed, rest);
     }
     throw new CliUsageError(`Unknown command: ${command}`);
   } catch (error) {
@@ -524,6 +536,331 @@ function compareLessonRoles(left: string, right: string): number {
   if (left === "*") return -1;
   if (right === "*") return 1;
   return left.localeCompare(right);
+}
+
+async function runPrompts(
+  io: CliIO,
+  args: ParsedArgs,
+  rest: readonly string[],
+): Promise<number> {
+  if (args.status !== undefined) {
+    throw new CliUsageError("--status is not supported by team prompts.");
+  }
+  const action = rest[0];
+  if (action === undefined || action === "list") {
+    if (rest.length > 1) throw new CliUsageError("Usage: team prompts list");
+    return await runPromptList(io, args);
+  }
+  if (action === "approve" || action === "reject" || action === "diff") {
+    if (rest.length !== 2) {
+      throw new CliUsageError(`Usage: team prompts ${action} <role.timestamp[.md]>`);
+    }
+    const sourcePath = promptProposalPathFromArgument(rest[1]);
+    if (!sourcePath) {
+      throw new CliUsageError("Prompt proposal must be a role.timestamp filename, optionally prefixed by proposals/.");
+    }
+    if (action === "diff") return await runPromptDiff(io, args, sourcePath);
+    return await runPromptDecision(io, args, action, sourcePath);
+  }
+  throw new CliUsageError("Usage: team prompts list | approve|reject|diff <role.timestamp[.md]>");
+}
+
+async function runPromptList(io: CliIO, args: ParsedArgs): Promise<number> {
+  const paths = resolvePaths(io, args);
+  const { db } = await openDatabase(paths.dbPath);
+  try {
+    const prompts = new PromptRepository(db);
+    scanPromptProposals(paths.rootDir, prompts);
+    const versions = prompts.list();
+    writeJson(io, {
+      ok: true,
+      database: paths.dbPath,
+      count: versions.length,
+      prompts: versions.map((version) => ({
+        ...version,
+        file: version.path ? path.posix.basename(version.path) : null,
+        current_path: version.status === "approved"
+          ? path.join(paths.rootDir, "prompts", `${version.role}.md`)
+          : null,
+      })),
+    });
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
+async function runPromptDiff(
+  io: CliIO,
+  args: ParsedArgs,
+  sourcePath: string,
+): Promise<number> {
+  const paths = resolvePaths(io, args);
+  const { db } = await openDatabase(paths.dbPath);
+  try {
+    const prompts = new PromptRepository(db);
+    scanPromptProposals(paths.rootDir, prompts);
+    const version = prompts.getByPath(sourcePath);
+    if (!version) throw new CliCommandError("Prompt proposal was not found.", "prompt_not_found");
+    if (!isRoleId(version.role)) {
+      throw new CliCommandError("Prompt proposal has an invalid role.", "invalid_proposal");
+    }
+    const proposalFile = promptProposalAbsolutePath(paths.rootDir, version.path);
+    const proposalText = readRegularPromptFile(proposalFile);
+    const current = readCurrentPrompt(paths.rootDir, version.role);
+    io.stdout(renderPromptDiff(
+      current.text,
+      proposalText,
+      current.label,
+      `proposal:${path.posix.basename(sourcePath)}`,
+    ));
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
+async function runPromptDecision(
+  io: CliIO,
+  args: ParsedArgs,
+  action: "approve" | "reject",
+  sourcePath: string,
+): Promise<number> {
+  const paths = resolvePaths(io, args);
+  const { db } = await openDatabase(paths.dbPath);
+  try {
+    const prompts = new PromptRepository(db);
+    scanPromptProposals(paths.rootDir, prompts);
+    const existing = prompts.getByPath(sourcePath);
+    if (!existing) throw new CliCommandError("Prompt proposal was not found.", "prompt_not_found");
+
+    if (action === "reject") {
+      if (existing.status === "rejected") {
+        writeJson(io, {
+          ok: true,
+          database: paths.dbPath,
+          action,
+          previous_status: existing.status,
+          changed: false,
+          prompt: existing,
+        });
+        return 0;
+      }
+      if (existing.status !== "proposed") {
+        throw new CliCommandError(
+          `Only proposed prompts can be rejected; prompt ${existing.id} is ${existing.status}.`,
+          "invalid_transition",
+        );
+      }
+      const decidedAt = new Date().toISOString();
+      const prompt = prompts.setStatusFrom(existing.id, "proposed", "rejected", decidedAt);
+      if (!prompt) {
+        const latest = prompts.get(existing.id);
+        if (latest?.status === "rejected") {
+          writeJson(io, {
+            ok: true,
+            database: paths.dbPath,
+            action,
+            previous_status: existing.status,
+            changed: false,
+            prompt: latest,
+          });
+          return 0;
+        }
+        throw new CliCommandError("Prompt status changed before the rejection was recorded.", "invalid_transition");
+      }
+      writeJson(io, {
+        ok: true,
+        database: paths.dbPath,
+        action,
+        previous_status: existing.status,
+        changed: true,
+        prompt,
+      });
+      return 0;
+    }
+
+    if (existing.status === "approved") {
+      writeJson(io, {
+        ok: true,
+        database: paths.dbPath,
+        action,
+        previous_status: existing.status,
+        changed: false,
+        current_path: path.join(paths.rootDir, "prompts", `${existing.role}.md`),
+        restart_required: true,
+        prompt: existing,
+      });
+      return 0;
+    }
+    if (existing.status !== "proposed") {
+      throw new CliCommandError(
+        `Only proposed prompts can be approved; prompt ${existing.id} is ${existing.status}.`,
+        "invalid_transition",
+      );
+    }
+    if (!isRoleId(existing.role)) {
+      throw new CliCommandError("Prompt proposal has an invalid role.", "invalid_proposal");
+    }
+
+    const proposalFile = promptProposalAbsolutePath(paths.rootDir, existing.path);
+    const proposalText = readRegularPromptFile(proposalFile);
+    if (proposalText.trim().length === 0) {
+      throw new CliCommandError("Prompt proposal must not be empty.", "invalid_proposal");
+    }
+    const decidedAt = new Date().toISOString();
+    const result = approvePromptFile(
+      paths.rootDir,
+      proposalFile,
+      existing,
+      proposalText,
+      prompts,
+      db,
+      decidedAt,
+    );
+    writeJson(io, {
+      ok: true,
+      database: paths.dbPath,
+      action,
+      previous_status: existing.status,
+      changed: true,
+      prompt: result.prompt,
+      current_path: result.currentPath,
+      restart_required: true,
+      ...(result.cleanup_warning ? { warning: result.cleanup_warning } : {}),
+    });
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
+function approvePromptFile(
+  rootDir: string,
+  proposalFile: string,
+  version: PromptVersionRow,
+  proposalText: string,
+  repository: PromptRepository,
+  db: Awaited<ReturnType<typeof openDatabase>>["db"],
+  decidedAt: string,
+): { readonly prompt: PromptVersionRow; readonly currentPath: string; readonly cleanup_warning?: string } {
+  if (!isRoleId(version.role)) throw new CliCommandError("Prompt proposal has an invalid role.", "invalid_proposal");
+  const promptsDirectory = ensurePlainDirectory(rootDir, "prompts");
+  const currentPath = path.join(promptsDirectory, `${version.role}.md`);
+  const currentStat = lstatIfPresent(currentPath);
+  if (currentStat && (!currentStat.isFile() || currentStat.isSymbolicLink())) {
+    throw new CliCommandError("Current prompt path must be a regular file.", "unsafe_path");
+  }
+
+  const backupPath = currentStat
+    ? path.join(promptsDirectory, `.${version.role}.${version.id}.${randomUUID()}.backup`)
+    : undefined;
+  if (backupPath) renameSync(currentPath, backupPath);
+
+  try {
+    renameSync(proposalFile, currentPath);
+    try {
+      db.transaction(() => {
+        repository.updateProposedSha(version.id, promptProposalSha(proposalText));
+        repository.supersedeApproved(version.role, decidedAt);
+        const approved = repository.setStatusFrom(version.id, "proposed", "approved", decidedAt);
+        if (!approved) throw new Error(`Prompt version ${version.id} disappeared during approval.`);
+      });
+    } catch (error) {
+      try {
+        renameSync(currentPath, proposalFile);
+        if (backupPath) renameSync(backupPath, currentPath);
+      } catch (rollbackError) {
+        throw new Error(
+          `Prompt approval failed (${errorMessage(error)}); file rollback also failed (${errorMessage(rollbackError)}).`,
+        );
+      }
+      throw error;
+    }
+
+    const prompt = repository.get(version.id);
+    if (!prompt) throw new Error(`Prompt version ${version.id} was approved but could not be read back.`);
+    let cleanupWarning: string | undefined;
+    if (backupPath) {
+      try {
+        unlinkSync(backupPath);
+      } catch (error) {
+        cleanupWarning = `Approved successfully but could not remove the previous prompt backup: ${errorMessage(error)}`;
+      }
+    }
+    return {
+      prompt,
+      currentPath,
+      ...(cleanupWarning ? { cleanup_warning: cleanupWarning } : {}),
+    };
+  } catch (error) {
+    if (backupPath && lstatIfPresent(backupPath) && !lstatIfPresent(currentPath)) {
+      renameSync(backupPath, currentPath);
+    }
+    throw error;
+  }
+}
+
+function promptProposalAbsolutePath(rootDir: string, sourcePath: string | null): string {
+  const relativePath = sourcePath ?? "";
+  const normalized = promptProposalPathFromArgument(relativePath);
+  if (!normalized || normalized !== relativePath) {
+    throw new CliCommandError("Prompt proposal path is invalid.", "invalid_proposal");
+  }
+  return path.join(rootDir, "proposals", path.posix.basename(relativePath));
+}
+
+function readRegularPromptFile(filePath: string): string {
+  const stat = lstatIfPresent(filePath);
+  if (!stat) throw new CliCommandError("Prompt proposal file was not found.", "prompt_not_found");
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new CliCommandError("Prompt proposal must be a regular file.", "unsafe_path");
+  }
+  return readFileSync(filePath, "utf8");
+}
+
+function readCurrentPrompt(rootDir: string, role: RoleId): { readonly text: string; readonly label: string } {
+  const fallback = getDefaultPrompt(role);
+  const promptsDirectory = path.join(rootDir, "prompts");
+  const directoryStat = lstatIfPresent(promptsDirectory);
+  if (!directoryStat) return { text: fallback, label: `built-in:${role}` };
+  if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+    throw new CliCommandError("Prompt override path must be a regular directory.", "unsafe_path");
+  }
+  const currentPath = path.join(promptsDirectory, `${role}.md`);
+  const currentStat = lstatIfPresent(currentPath);
+  if (!currentStat) return { text: fallback, label: `built-in:${role}` };
+  if (!currentStat.isFile() || currentStat.isSymbolicLink()) {
+    throw new CliCommandError("Current prompt path must be a regular file.", "unsafe_path");
+  }
+  const text = readFileSync(currentPath, "utf8").trim();
+  return text ? { text, label: `prompts/${role}.md` } : { text: fallback, label: `built-in:${role}` };
+}
+
+function ensurePlainDirectory(rootDir: string, name: "prompts"): string {
+  const directory = path.join(rootDir, name);
+  let stat = lstatIfPresent(directory);
+  if (!stat) {
+    ensureDirectory(directory);
+    stat = lstatIfPresent(directory);
+  }
+  if (!stat?.isDirectory() || stat.isSymbolicLink()) {
+    throw new CliCommandError(`Prompt ${name} path must be a regular directory.`, "unsafe_path");
+  }
+  return directory;
+}
+
+function lstatIfPresent(filePath: string) {
+  try {
+    return lstatSync(filePath);
+  } catch (error) {
+    if (isMissingFileError(error)) return undefined;
+    throw error;
+  }
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
 function runSummary(run: RunRow, now: number): Record<string, unknown> {

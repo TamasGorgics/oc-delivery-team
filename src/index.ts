@@ -20,6 +20,7 @@ import { createLessonInjectionHandler } from "./hooks/lessons";
 import { registerTraceHooks } from "./hooks/trace";
 import { resolveModels, type ModelResolution } from "./models";
 import { getDefaultPrompt } from "./prompts";
+import { promptProposalSha } from "./prompts/proposals";
 import {
   enabledRoles,
   rolePermissionRules,
@@ -30,6 +31,7 @@ import {
 import { openDatabase, type TeamDatabase } from "./state/db";
 import { LessonsRepository } from "./state/lessons";
 import { resolveMainRepoDirectory } from "./state/paths";
+import { PromptRepository } from "./state/prompts";
 import { RunRepository } from "./state/runs";
 import { Tracer } from "./state/trace";
 import { registerTools, type ToolRuntime } from "./tools/runtime";
@@ -115,6 +117,7 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
     });
     const runs = db ? new RunRepository(db) : null;
     const lessons = db ? new LessonsRepository(db) : null;
+    const prompts = db ? new PromptRepository(db) : null;
     const runtime: ToolRuntime = {
       config,
       db,
@@ -146,7 +149,7 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
       for (const role of enabledRoles(config.roles.disabled)) {
         const route = modelResolution.routes[role.id];
         upsertAgent(editor, role.id, (draft) => {
-          applyRoleDraft(draft, role, route, config);
+          applyRoleDraft(draft, role, route, config, prompts);
         });
       }
     });
@@ -291,12 +294,13 @@ function applyRoleDraft(
   role: RoleDefinition,
   route: ModelResolution["routes"][keyof ModelResolution["routes"]],
   config: DeliveryTeamConfig,
+  prompts: PromptRepository | null,
 ): void {
   setAgentName(draft, role.name);
   draft.description = role.description;
   draft.mode = role.mode;
   draft.hidden = false;
-  draft.system = resolvePrompt(config.rootDir, role.id);
+  draft.system = resolvePrompt(config.rootDir, role.id, prompts);
   draft.steps = route?.steps;
   if (route?.steps === undefined) delete draft.steps;
   setAgentModel(draft, route?.model ?? null);
@@ -305,12 +309,17 @@ function applyRoleDraft(
   draft.permissions = mergeRolePermissions(draft.permissions, roleRules);
 }
 
-function resolvePrompt(rootDir: string, role: RoleId): string {
+function resolvePrompt(rootDir: string, role: RoleId, prompts: PromptRepository | null): string {
   const defaultPrompt = getDefaultPrompt(role);
+  if (!prompts) return defaultPrompt;
   const overridePath = path.join(rootDir, "prompts", `${role}.md`);
   try {
-    const override = readFileSync(overridePath, "utf8").trim();
-    return override || defaultPrompt;
+    const raw = readFileSync(overridePath, "utf8");
+    const override = raw.trim();
+    if (!override) return defaultPrompt;
+    const approved = prompts.list({ role, status: "approved" })
+      .some((version) => version.sha === promptProposalSha(raw));
+    return approved ? override : defaultPrompt;
   } catch {
     return defaultPrompt;
   }

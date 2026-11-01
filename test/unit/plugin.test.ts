@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import deliveryTeam, { getDeliveryTeamSnapshot } from "../../src/index";
+import { runTeamCli } from "../../src/cli/team";
+import { DEFAULT_PROMPTS } from "../../src/prompts";
+import { promptProposalSha } from "../../src/prompts/proposals";
 import { ROLE_IDS } from "../../src/roles";
+import { openDatabase } from "../../src/state/db";
+import { PromptRepository } from "../../src/state/prompts";
 import { createFakeContext, fakeModel } from "../fakes/ctx";
 
 const temporaryDirectories: string[] = [];
@@ -106,20 +111,49 @@ describe("delivery-team plugin registration", () => {
     expect(fake.state.contextHook).toBeUndefined();
   });
 
-  test("loads human-approved prompt files and rereads them when the transform reloads", async () => {
+  test("loads only approved prompt files and rereads them when the transform reloads", async () => {
     const projectDirectory = mkdtempSync(path.join(os.tmpdir(), "delivery-team-plugin-"));
     temporaryDirectories.push(projectDirectory);
-    const promptDirectory = path.join(projectDirectory, ".team", "prompts");
+    const rootDir = path.join(projectDirectory, ".team");
+    const promptDirectory = path.join(rootDir, "prompts");
     mkdirSync(promptDirectory, { recursive: true });
     const promptPath = path.join(promptDirectory, "team-lead.md");
-    writeFileSync(promptPath, "Human-approved team lead prompt.", "utf8");
+    const approvedText = "Human-approved team lead prompt.";
+    writeFileSync(promptPath, approvedText, "utf8");
+    const { db } = await openDatabase(path.join(rootDir, "team.db"));
+    try {
+      const repository = new PromptRepository(db);
+      const version = repository.recordProposal({
+        role: "team-lead",
+        sha: promptProposalSha(approvedText),
+        path: "proposals/team-lead.20260101T000000Z.md",
+      }).row;
+      repository.setStatus(version.id, "approved", "2026-01-01T00:00:00.000Z");
+    } finally {
+      db.close();
+    }
 
     const fake = createFakeContext({ projectDirectory });
     const cleanup = await deliveryTeam.setup(fake.context);
     assertCleanup(cleanup);
-    expect(fake.state.agents.get("team-lead")?.system).toBe("Human-approved team lead prompt.");
+    expect(fake.state.agents.get("team-lead")?.system).toBe(approvedText);
 
-    writeFileSync(promptPath, "Updated approved prompt.", "utf8");
+    writeFileSync(promptPath, "Unregistered prompt edit.", "utf8");
+    fake.replayAgentTransforms();
+    expect(fake.state.agents.get("team-lead")?.system).toBe(DEFAULT_PROMPTS["team-lead"]);
+
+    writeFileSync(promptPath, approvedText, "utf8");
+    const proposalDirectory = path.join(rootDir, "proposals");
+    mkdirSync(proposalDirectory, { recursive: true });
+    const filename = "team-lead.20260101T000001Z.md";
+    writeFileSync(path.join(proposalDirectory, filename), "Updated approved prompt.", "utf8");
+    const output: string[] = [];
+    const code = await runTeamCli(["prompts", "approve", filename, "--root", rootDir], {
+      cwd: projectDirectory,
+      stdout: (text) => output.push(text),
+      stderr: (text) => output.push(text),
+    });
+    expect(code).toBe(0);
     fake.replayAgentTransforms();
     expect(fake.state.agents.get("team-lead")?.system).toBe("Updated approved prompt.");
     await cleanup();

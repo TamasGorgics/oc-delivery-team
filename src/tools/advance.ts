@@ -1,7 +1,9 @@
 import { validatePhaseGate } from "../state/artifacts";
 import { nextPhase } from "../state/phases";
 import { writeRunReport } from "../state/report";
+import { PromptRepository } from "../state/prompts";
 import { StackService } from "../stack/service";
+import { scanPromptProposals } from "../prompts/proposals";
 import {
   defineTeamTool,
   failure,
@@ -97,6 +99,32 @@ export function createAdvanceTool(runtime: ToolRuntime) {
         { from: run.phase, to: target, duration_ms: durationMs },
         { runId: run.id, sessionId: identity.sessionId, agent: identity.agent, toolCallId: identity.toolCallId, phase: target },
       );
+
+      if (run.phase === "retro") {
+        try {
+          const scanned = scanPromptProposals(
+            runtime.config.rootDir,
+            new PromptRepository(services.db),
+            { sourceRun: run.id },
+          );
+          runtime.trace.event(
+            "prompts.proposals_scanned",
+            {
+              directory: scanned.directory,
+              count: scanned.registered.length,
+              prompt_ids: scanned.registered.map((proposal) => proposal.id),
+              skipped: scanned.skipped,
+            },
+            { runId: run.id, sessionId: identity.sessionId, agent: identity.agent, toolCallId: identity.toolCallId, phase: run.phase },
+          );
+        } catch (error) {
+          runtime.trace.event(
+            "prompts.proposal_scan_error",
+            { message: error instanceof Error ? error.message : String(error) },
+            { runId: run.id, sessionId: identity.sessionId, agent: identity.agent, toolCallId: identity.toolCallId, phase: run.phase },
+          );
+        }
+      }
 
       let reportPath: string | undefined;
       if (target === "retro") {

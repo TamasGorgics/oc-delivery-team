@@ -359,9 +359,9 @@ Concrete probes to run:
 - [x] Implement `inject-lessons` on the actual request/context hook: append the system section; support both string and structured `system` shapes through `compat.ts`; if the agent/role is unavailable, inject role-agnostic lessons only; never throw.
 - [x] Keep the request hook fast (target < 10 ms typical) with indexed FTS and small N; no network calls in hooks.
 - [x] Implement CLI: `team lessons [--status proposed]`, `approve|reject|retire <id>`, `export`, and `stale` (report only).
-- [ ] Implement prompt proposals: retro writes a complete proposed prompt to `<root>/proposals/<role>.<ts>.md`; record a `prompt_versions` row on transition out of retro (scan the directory) or via an edit hook if verified.
-- [ ] Implement CLI: `team prompts list|approve|reject|diff`; approval moves the proposal to `<root>/prompts/<role>.md`, supersedes the previous version, and triggers reload via the verified mechanism (marker file or `ctx.agent.reload()`) or documents restart.
-- [ ] Add an approved-prompt reload test or a documented restart path; ensure pending proposals are never used.
+- [x] Implement prompt proposals: retro writes a complete proposed prompt to `<root>/proposals/<role>.<ts>.md`; record a `prompt_versions` row on transition out of retro by scanning the directory.
+- [x] Implement CLI: `team prompts list|approve|reject|diff`; approval moves the proposal to `<root>/prompts/<role>.md`, supersedes the previous version, and documents restart as the application path.
+- [x] Add an approved-prompt restart test and document the restart path; ensure pending proposals are never used.
 - [ ] Test: proposed lessons are never injected; approved are injected within `topN`/`budgetChars`; duplicate detection; stack filtering; stable ordering; role fallback; performance budget.
 
 ### Acceptance
@@ -369,7 +369,7 @@ Concrete probes to run:
 - [x] Proposed lessons are never injected; approved lessons are.
 - [x] Injection respects `topN`, `budgetChars`, role, stack tags, and stable order.
 - [x] Duplicates are rejected with the existing ID; per-run cap works.
-- [ ] Approving a prompt changes the agent prompt after reload/restart, as documented.
+- [x] Approving a prompt changes the agent prompt after reload/restart, as documented.
 - [x] Agents have no approval path; CLI approval changes status and timestamps.
 - [x] Lesson export produces `<root>/lessons-export/<role>.md`.
 

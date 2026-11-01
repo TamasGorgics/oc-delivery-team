@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import deliveryTeam, { getDeliveryTeamSnapshot } from "../../src/index";
 import { openDatabase } from "../../src/state/db";
+import { PromptRepository } from "../../src/state/prompts";
 import { RunRepository } from "../../src/state/runs";
 import { Tracer } from "../../src/state/trace";
 import { createFakeContext, type FakeContextHarness } from "../fakes/ctx";
@@ -329,9 +330,29 @@ describe("scripted pipeline", () => {
     expect(report).toContain("human_approval: the human approved the spec");
 
     writeArtifact(harness, run, "retro.md", "# Retro\n");
+    const proposalDirectory = path.join(harness.rootDir, "proposals");
+    mkdirSync(proposalDirectory, { recursive: true });
+    const proposalFile = "developer.20261031T153012Z.md";
+    writeFileSync(
+      path.join(proposalDirectory, proposalFile),
+      "You are the complete proposed developer prompt.\n",
+      "utf8",
+    );
     const done = await call(harness, "team_advance", { run });
     expect(done).toMatchObject({ ok: true, from: "retro", to: "done", terminal: true });
     expect(await readRun(harness, run)).toMatchObject({ status: "closed", phase: "done" });
+    const { db } = await openDatabase(path.join(harness.rootDir, "team.db"));
+    try {
+      expect(new PromptRepository(db).list()).toMatchObject([{
+        role: "developer",
+        path: `proposals/${proposalFile}`,
+        status: "proposed",
+        source_run: run,
+        sha: expect.any(String),
+      }]);
+    } finally {
+      db.close();
+    }
     expect(await call(harness, "team_advance", { run })).toMatchObject({ ok: false, code: "run_terminal" });
     const finalStatus = await call(harness, "team_status", { run });
     expect(finalStatus).toMatchObject({ status: "closed", phase: "done", gate: { ok: true } });

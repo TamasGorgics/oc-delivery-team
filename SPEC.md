@@ -251,7 +251,7 @@ Registered in `setup` through `ctx.agent.transform` **[DOC]**. Each agent: `desc
 Rules:
 
 - Read-only roles get `edit: deny`, `bash: deny` (or the closest equivalent). Roles that need narrow write access are constrained by the gate hook (§9) *and* prompt.
-- Default prompts live in `src/prompts/<role>.ts`. **Prompt resolution order** at setup: (1) `.team/prompts/<role>.md` if present (human-approved), else (2) the built-in default. After approving a prompt, `ctx.agent.reload()` **[DOC: exists]** re-applies transforms; also reload on setup.
+- Default prompts live in `src/prompts/<role>.ts`. **Prompt resolution order** at setup: (1) `.team/prompts/<role>.md` only when its SHA matches an `approved` `prompt_versions` row, else (2) the built-in default. A direct file edit is not approval. `ctx.agent.reload()` **[DOC: exists]** re-applies transforms, but the standalone CLI cannot call it; restart OpenCode after CLI approval.
 - All role prompts must: state the role's single responsibility; name the artifact(s) to write and their required **machine-readable footer** (§7.3); say "pass paths, not content"; say "do not exceed your scope"; tell the agent to call `team_note` for decisions/findings and `team_loop` before retrying.
 - `team-lead` prompt must encode the pipeline, the loop cap rule, "ask the human after `maxLoops`", and "call `team_advance` only after the phase artifact exists and the footer is satisfied".
 - Do not hardcode model IDs anywhere in code or default prompts. Model selection is governed solely by §6.2.
@@ -564,8 +564,8 @@ CREATE TABLE eval_runs (
 1. `retro` phase: the retro agent reads `trace` data (via `team_status` output and the CLI-generated `report.md` placed in the run dir by `team_advance` entering `retro`), the run's artifacts, and human corrections noted via `team_note`.
 2. It writes `retro.md` (what worked, what failed, loops used, gate denials, adversary findings that tests missed).
 3. It calls `team_lesson_propose` for each durable lesson (short, imperative, role-scoped, with evidence).
-4. For prompt changes it writes a **complete proposed prompt** to `<root>/proposals/<role>.<timestamp>.md` and the plugin records a `prompt_versions` row (`proposed`) — either by a hook on edits under `proposals/` or by `team_advance` out of `retro` scanning the directory.
-5. **Human approval only** via CLI (§12): `team lessons approve <id>` / `team prompts approve <role>.<ts>` (moves the file to `<root>/prompts/<role>.md`, marks previous `superseded`, and writes a `reload` marker file the plugin watches to call `ctx.agent.reload()`; if watching isn't practical, the change applies on next OpenCode restart — document this).
+4. For prompt changes it writes a **complete proposed prompt** to `<root>/proposals/<role>.<timestamp>.md`; when advancing out of `retro`, the plugin scans the directory and records each new file in `prompt_versions` with status `proposed`.
+5. **Human approval only** via CLI (§12): `team lessons approve <id>` / `team prompts approve <role>.<ts>` moves the proposal to `<root>/prompts/<role>.md`, marks the previous approved version `superseded`, and records the SHA and decision time. Because the CLI runs outside the plugin host, approval requires an OpenCode restart; setup reads the approved override and reloads the agent transform. Pending files under `proposals/` are never used as prompts, and the plugin does not watch `.team/` for changes.
 6. Approved lessons are injected per §9.3.
 
 ### 11.2 Lesson quality rules (enforced in `team_lesson_propose` validation)
