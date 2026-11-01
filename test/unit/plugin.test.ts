@@ -99,8 +99,8 @@ describe("delivery-team plugin registration", () => {
       },
     });
 
-    const options = await fake.invokeContextHook("developer", { existing: "kept" });
-    expect(options).toEqual({ existing: "kept", temperature: 0.1, topP: 0.9, maxTokens: 32 });
+    const event = await fake.invokeContextHook("developer", { existing: "kept" });
+    expect(event.options).toEqual({ existing: "kept", temperature: 0.1, topP: 0.9, maxTokens: 32 });
 
     await cleanup();
     expect(fake.state.contextHook).toBeUndefined();

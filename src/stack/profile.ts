@@ -351,6 +351,18 @@ export function profileHasTestCommand(profile: StackProfile): boolean {
   });
 }
 
+/** Unique, lower-case language tags from every component in a Stack Profile. */
+export function stackLanguages(profile: StackProfile): string[] {
+  const languages = new Set<string>();
+  for (const component of profile.components) {
+    for (const language of component.languages) {
+      const normalized = language.trim().toLowerCase();
+      if (normalized) languages.add(normalized);
+    }
+  }
+  return [...languages];
+}
+
 export function findHumanOwnedConflicts(human: unknown, patch: unknown, prefix = ""): string[] {
   if (!isRecord(patch)) return [];
   if (!isRecord(human)) return Object.keys(patch).map((key) => joinPath(prefix, key));

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  appendSystemSection,
   formatModelReference,
   parseModelReference,
   pluginOptions,
@@ -60,5 +61,45 @@ describe("OpenCode compatibility boundary", () => {
     expect(draft.model).toMatchObject({ id: "other", providerID: "provider" });
     setAgentModel(draft, null);
     expect(draft.model).toBeUndefined();
+  });
+
+  test("appends a section to string, array, and single-part system values", () => {
+    const section = "## Team lessons\n- [*] Keep the process predictable.";
+
+    expect(appendSystemSection("Base system.", section)).toEqual({
+      ok: true,
+      system: `Base system.\n\n${section}`,
+    });
+
+    const parts = [{ type: "text", text: "Base system." }];
+    const arrayResult = appendSystemSection(parts, section);
+    expect(arrayResult.ok).toBe(true);
+    expect(parts).toEqual([
+      { type: "text", text: "Base system." },
+      { type: "text", text: `\n\n${section}` },
+    ]);
+
+    expect(appendSystemSection({ type: "text", text: "Base system." }, section)).toEqual({
+      ok: true,
+      system: [
+        { type: "text", text: "Base system." },
+        { type: "text", text: `\n\n${section}` },
+      ],
+    });
+    expect(appendSystemSection(undefined, section)).toEqual({
+      ok: true,
+      system: [{ type: "text", text: section }],
+    });
+    expect(appendSystemSection(42, section)).toMatchObject({ ok: false });
+  });
+
+  test("does not append the same section twice", () => {
+    const section = "## Team lessons\n- [*] Keep the process predictable.";
+    const existing = `Base system.\n\n${section}`;
+
+    expect(appendSystemSection(existing, section)).toEqual({ ok: true, system: existing });
+    const parts = [{ type: "text", text: existing }];
+    expect(appendSystemSection(parts, section)).toEqual({ ok: true, system: parts });
+    expect(parts).toHaveLength(1);
   });
 });

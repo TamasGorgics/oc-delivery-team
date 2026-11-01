@@ -16,6 +16,7 @@ import { registerCommands } from "./commands";
 import { parseConfig, type ConfigWarning, type DeliveryTeamConfig } from "./config";
 import { startEventIngest, type EventIngestHandle, type EventIngestStatus } from "./hooks/events";
 import { registerGate } from "./hooks/gate";
+import { createLessonInjectionHandler } from "./hooks/lessons";
 import { registerTraceHooks } from "./hooks/trace";
 import { resolveModels, type ModelResolution } from "./models";
 import { getDefaultPrompt } from "./prompts";
@@ -191,22 +192,31 @@ async function setupOnce(context: PluginContext): Promise<() => Promise<void>> {
       }
     }
 
-    if (hasRequestOptions(modelResolution)) {
+    try {
+      const applyModelOptions = hasRequestOptions(modelResolution);
+      const injectLessons = createLessonInjectionHandler(runtime);
       const hookRegistration = await context.session.hook("context", (event) => {
-        try {
-          const role = roleIdFromAgent(event.agent);
-          if (!role) return;
-          const route = modelResolution.routes[role];
-          if (!route) return;
-          const options = route.requestOptions;
-          if (options.temperature !== undefined) event.options.temperature = options.temperature;
-          if (options.topP !== undefined) event.options.topP = options.topP;
-          if (options.maxTokens !== undefined) event.options.maxTokens = options.maxTokens;
-        } catch (error) {
-          setupWarnings.push(`model.context_hook: ${errorMessage(error)}`);
+        if (applyModelOptions) {
+          try {
+            const role = roleIdFromAgent(event.agent);
+            if (role) {
+              const route = modelResolution.routes[role];
+              const options = route?.requestOptions;
+              if (options) {
+                if (options.temperature !== undefined) event.options.temperature = options.temperature;
+                if (options.topP !== undefined) event.options.topP = options.topP;
+                if (options.maxTokens !== undefined) event.options.maxTokens = options.maxTokens;
+              }
+            }
+          } catch (error) {
+            setupWarnings.push(`model.context_hook: ${errorMessage(error)}`);
+          }
         }
+        injectLessons(event);
       });
       disposers.push(hookRegistration.dispose);
+    } catch (error) {
+      setupWarnings.push(`context.registration: ${errorMessage(error)}`);
     }
 
     // Replays the transform so changed human-approved prompt files are read on setup.

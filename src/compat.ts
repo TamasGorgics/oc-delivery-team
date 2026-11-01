@@ -279,6 +279,68 @@ export function toolInputObject(input: unknown): Record<string, unknown> {
     : {};
 }
 
+export interface TextSystemPart {
+  readonly type: "text";
+  readonly text: string;
+}
+
+export type SystemAppendResult =
+  | { readonly ok: true; readonly system: unknown }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * Session context hooks expose `system` as an array of text parts in the
+ * installed host, but the SPEC requires string and structured compatibility.
+ * This adapter mutates arrays in place, returns a replacement string for string
+ * systems, and refuses unknown shapes so the caller can skip safely.
+ */
+export function appendSystemSection(system: unknown, section: string): SystemAppendResult {
+  const text = section.trim();
+  if (!text) return { ok: true, system };
+
+  if (typeof system === "string") {
+    if (system.includes(text)) return { ok: true, system };
+    return { ok: true, system: system ? `${system}\n\n${text}` : text };
+  }
+
+  if (Array.isArray(system)) {
+    if (system.some((part) => systemPartText(part)?.includes(text))) {
+      return { ok: true, system };
+    }
+    system.push({ type: "text", text: system.length > 0 ? `\n\n${text}` : text });
+    return { ok: true, system };
+  }
+
+  if (isTextSystemPart(system)) {
+    if (system.text.includes(text)) return { ok: true, system };
+    return {
+      ok: true,
+      system: [system, { type: "text", text: `\n\n${text}` }],
+    };
+  }
+
+  if (system === undefined || system === null) {
+    return { ok: true, system: [{ type: "text", text }] };
+  }
+
+  return {
+    ok: false,
+    reason: "system must be a string, a text part, or an array of text parts.",
+  };
+}
+
+function isTextSystemPart(value: unknown): value is TextSystemPart {
+  return typeof value === "object"
+    && value !== null
+    && !Array.isArray(value)
+    && (value as Record<string, unknown>).type === "text"
+    && typeof (value as Record<string, unknown>).text === "string";
+}
+
+function systemPartText(value: unknown): string | undefined {
+  return isTextSystemPart(value) ? value.text : undefined;
+}
+
 export function toolContextIdentity(context: ToolContext): {
   readonly sessionId: string;
   readonly agent: string;

@@ -36,6 +36,14 @@ export interface LessonListFilter {
   readonly limit?: number;
 }
 
+export interface LessonRankingInput {
+  /** Omit to inject role-agnostic lessons only. */
+  readonly role?: LessonRole;
+  readonly languages?: readonly string[];
+  readonly query?: string;
+  readonly topN: number;
+}
+
 export type LessonTextValidation =
   | { readonly ok: true; readonly text: string }
   | { readonly ok: false; readonly message: string };
@@ -287,6 +295,66 @@ export class LessonsRepository {
     return this.get(id);
   }
 
+  /**
+   * Return at most `topN` approved lessons for a request. FTS/BM25 matches come
+   * first; the recency/hit-count fallback fills any remaining slots. Every
+   * ordering ends with the lesson id so repeated requests are deterministic.
+   */
+  rankApproved(input: LessonRankingInput): LessonRow[] {
+    const limit = Number.isFinite(input.topN) ? Math.max(1, Math.floor(input.topN)) : 1;
+    const scope = approvedScope(input.role, input.languages ?? []);
+    const ranked: LessonRow[] = [];
+    const seen = new Set<number>();
+
+    const queryTokens = lessonTokens(input.query ?? "").slice(0, 40);
+    if (queryTokens.length > 0) {
+      const match = queryTokens.map((token) => `"${token.replace(/\"/g, "")}"`).join(" OR ");
+      try {
+        const rows = this.db.all<LessonRow>(
+          `SELECT lessons.* FROM lessons_fts
+           JOIN lessons ON lessons.id = lessons_fts.rowid
+           WHERE lessons_fts MATCH ? AND ${scope.clauses.join(" AND ")}
+           ORDER BY bm25(lessons_fts), lessons.id
+           LIMIT ?`,
+          [match, ...scope.params, limit],
+        );
+        for (const row of rows) {
+          ranked.push(row);
+          seen.add(row.id);
+        }
+      } catch {
+        // A malformed or unavailable FTS index falls back to recency and hits.
+      }
+    }
+
+    if (ranked.length < limit) {
+      const rows = this.db.all<LessonRow>(
+        `SELECT lessons.* FROM lessons
+         WHERE ${scope.clauses.join(" AND ")}
+         ORDER BY lessons.hit_count DESC, lessons.created_at DESC, lessons.id
+         LIMIT ?`,
+        [...scope.params, limit],
+      );
+      for (const row of rows) {
+        if (seen.has(row.id)) continue;
+        ranked.push(row);
+        seen.add(row.id);
+        if (ranked.length >= limit) break;
+      }
+    }
+
+    return ranked.slice(0, limit);
+  }
+
+  recordHits(ids: readonly number[]): void {
+    const unique = [...new Set(ids.filter((id) => Number.isSafeInteger(id) && id > 0))];
+    if (unique.length === 0) return;
+    this.db.run(
+      `UPDATE lessons SET hit_count = hit_count + 1 WHERE id IN (${unique.map(() => "?").join(", ")})`,
+      unique,
+    );
+  }
+
   private duplicateCandidates(role: LessonRole, text: string): LessonRow[] {
     const fallback = (): LessonRow[] => this.db.all<LessonRow>(
       "SELECT * FROM lessons WHERE role = ? AND status <> 'rejected' ORDER BY id LIMIT 200",
@@ -309,4 +377,31 @@ export class LessonsRepository {
       return fallback();
     }
   }
+}
+
+function approvedScope(
+  role: LessonRole | undefined,
+  languages: readonly string[],
+): { readonly clauses: readonly string[]; readonly params: readonly string[] } {
+  const clauses = ["lessons.status = 'approved'"];
+  const params: string[] = [];
+
+  if (role) {
+    clauses.push("lessons.role IN (?, '*')");
+    params.push(role);
+  } else {
+    clauses.push("lessons.role = '*'");
+  }
+
+  const normalized = [...new Set(
+    languages.map((language) => language.trim().toLowerCase()).filter(Boolean),
+  )];
+  if (normalized.length > 0) {
+    clauses.push(`(lessons.stack_tag = '*' OR lessons.stack_tag IN (${normalized.map(() => "?").join(", ")}))`);
+    params.push(...normalized);
+  } else {
+    clauses.push("lessons.stack_tag = '*'");
+  }
+
+  return { clauses, params };
 }

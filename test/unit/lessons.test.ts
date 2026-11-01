@@ -66,11 +66,11 @@ async function call(
 
 async function withLessons<T>(
   harness: Harness,
-  fn: (lessons: LessonsRepository) => T,
+  fn: (lessons: LessonsRepository, db: Awaited<ReturnType<typeof openDatabase>>["db"]) => T,
 ): Promise<T> {
   const { db } = await openDatabase(path.join(harness.rootDir, "team.db"));
   try {
-    return fn(new LessonsRepository(db));
+    return fn(new LessonsRepository(db), db);
   } finally {
     db.close();
   }
@@ -155,6 +155,127 @@ describe("lesson repository", () => {
     });
 
     expect(result).toEqual({ id: 1, duplicate: undefined });
+  });
+
+  test("ranks approved lessons by FTS, then fills with the role and stack scoped fallback", async () => {
+    const harness = await setup();
+    await call(harness, "team_start", { title: "SQLite migration rollout" });
+
+    const ids = await withLessons(harness, (lessons) => {
+      const add = (role: "developer" | "*" | "qa", text: string, stackTag: string, status = "approved") => {
+        const id = lessons.insert({ role, text, stackTag });
+        if (status !== "proposed") lessons.setStatus(id, status as "approved" | "rejected");
+        return id;
+      };
+
+      const ranked = add(
+        "developer",
+        "Run the sqlite migration verification before committing the database change.",
+        "typescript",
+      );
+      const fallback = add(
+        "developer",
+        "Keep the release notes current for every shipped change.",
+        "*",
+      );
+      const wildcard = add(
+        "*",
+        "Record evidence paths for every recurring delivery failure.",
+        "typescript",
+      );
+      add("developer", "Run pytest for the Python package before packaging.", "python");
+      add("qa", "Verify the release candidate with the documented acceptance checklist.", "typescript");
+      add(
+        "developer",
+        "Use the sqlite migration verification for a proposed lesson.",
+        "typescript",
+        "proposed",
+      );
+      add(
+        "developer",
+        "Use the sqlite migration verification after a rejection.",
+        "typescript",
+        "rejected",
+      );
+      return { ranked, fallback, wildcard };
+    });
+
+    const selected = await withLessons(harness, (lessons) => lessons.rankApproved({
+      role: "developer",
+      languages: ["typescript"],
+      query: "sqlite migration verification",
+      topN: 8,
+    }));
+
+    expect(selected.map((lesson) => lesson.id)).toEqual([ids.ranked, ids.fallback, ids.wildcard]);
+  });
+
+  test("falls back to hit count, recency, and id when there is no FTS query", async () => {
+    const harness = await setup();
+    await call(harness, "team_start", { title: "Fallback ranking" });
+
+    const ids = await withLessons(harness, (lessons, db) => {
+      const add = (text: string) => {
+        const id = lessons.insert({ role: "*", text, stackTag: "*" });
+        lessons.setStatus(id, "approved");
+        return id;
+      };
+      const older = add("Use the first fallback lesson for deterministic ordering checks.");
+      const newer = add("Use the second fallback lesson for deterministic ordering checks.");
+      const lowHit = add("Use the third fallback lesson for deterministic ordering checks.");
+      const sameTime = add("Use the fourth fallback lesson for deterministic ordering checks.");
+
+      db.run("UPDATE lessons SET hit_count = 5, created_at = '2026-01-01T00:00:00.000Z' WHERE id = ?", [older]);
+      db.run("UPDATE lessons SET hit_count = 5, created_at = '2026-02-01T00:00:00.000Z' WHERE id = ?", [newer]);
+      db.run("UPDATE lessons SET hit_count = 2, created_at = '2026-03-01T00:00:00.000Z' WHERE id = ?", [lowHit]);
+      db.run("UPDATE lessons SET hit_count = 5, created_at = '2026-02-01T00:00:00.000Z' WHERE id = ?", [sameTime]);
+      return { older, newer, lowHit, sameTime };
+    });
+
+    const selected = await withLessons(harness, (lessons) => lessons.rankApproved({
+      languages: [],
+      topN: 8,
+    }));
+
+    expect(selected.map((lesson) => lesson.id)).toEqual([
+      ids.newer,
+      ids.sameTime,
+      ids.older,
+      ids.lowHit,
+    ]);
+  });
+
+  test("limits ranking to topN and increments each selected lesson once", async () => {
+    const harness = await setup();
+    await call(harness, "team_start", { title: "Top N" });
+
+    const ids = await withLessons(harness, (lessons, db) => {
+      const inserted = [1, 2, 3].map((index) => {
+        const id = lessons.insert({
+          role: "*",
+          text: `Use approved lesson ${index} to keep the delivery process predictable.`,
+          stackTag: "*",
+        });
+        lessons.setStatus(id, "approved");
+        return id;
+      });
+      db.run(
+        `UPDATE lessons SET created_at = '2026-01-01T00:00:00.000Z' WHERE id IN (${inserted.map(() => "?").join(", ")})`,
+        inserted,
+      );
+      return inserted;
+    });
+
+    const selected = await withLessons(harness, (lessons) => lessons.rankApproved({
+      languages: [],
+      query: "",
+      topN: 2,
+    }));
+    expect(selected.map((lesson) => lesson.id)).toEqual(ids.slice(0, 2));
+
+    await withLessons(harness, (lessons) => lessons.recordHits([ids[0] as number, ids[0] as number, -1, 0]));
+    const hitCounts = await withLessons(harness, (lessons) => lessons.list().map((lesson) => lesson.hit_count));
+    expect(hitCounts).toEqual([1, 0, 0]);
   });
 });
 

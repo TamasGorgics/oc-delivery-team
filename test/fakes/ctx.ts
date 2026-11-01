@@ -44,9 +44,17 @@ export interface FakePromptCall {
 }
 
 export interface FakeContextEvent {
+  readonly sessionID: string;
   readonly agent: string;
   readonly model?: unknown;
+  system: unknown;
   readonly options: Record<string, unknown>;
+}
+
+export interface FakeContextHookOptions {
+  readonly sessionID?: string;
+  readonly system?: unknown;
+  readonly model?: unknown;
 }
 
 export interface FakeToolBeforeEvent {
@@ -140,7 +148,11 @@ export interface FakeContextHarness {
   emit(type: string, options?: FakeEventOptions): Promise<void>;
   failEvents(error: Error): Promise<void>;
   flushEvents(): Promise<void>;
-  invokeContextHook(agent: string, options?: Record<string, unknown>): Promise<Record<string, unknown>>;
+  invokeContextHook(
+    agent: string,
+    options?: Record<string, unknown>,
+    context?: FakeContextHookOptions,
+  ): Promise<FakeContextEvent>;
 }
 
 export interface FakeToolCallContext {
@@ -493,10 +505,16 @@ export function createFakeContext(options: FakeContextOptions = {}): FakeContext
     async flushEvents() {
       await flushEvents();
     },
-    async invokeContextHook(agent, options = {}) {
-      const event: FakeContextEvent = { agent, options };
+    async invokeContextHook(agent, options = {}, context = {}) {
+      const event: FakeContextEvent = {
+        sessionID: context.sessionID ?? "session-1",
+        agent,
+        ...(context.model !== undefined ? { model: context.model } : {}),
+        system: context.system ?? [],
+        options,
+      };
       await state.contextHook?.(event);
-      return event.options;
+      return event;
     },
   };
 }
