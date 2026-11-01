@@ -1,3 +1,5 @@
+import path from "node:path";
+
 export const ROLE_IDS = [
   "team-lead",
   "researcher",
@@ -228,14 +230,25 @@ export function enabledRoles(disabled: readonly RoleId[] = []): readonly RoleDef
  * Coarse permissions for M1. Narrow write scopes are enforced by prompts now and by
  * the Stack Profile plus gate hook in M2/M3.
  */
-export function rolePermissionRules(role: RoleDefinition, rootDir: string): PermissionRule[] {
+export function rolePermissionRules(
+  role: RoleDefinition,
+  rootDir: string,
+  projectDir: string = path.dirname(rootDir),
+): PermissionRule[] {
   const rules: PermissionRule[] = [];
 
   if (role.writeScope === "none") {
     rules.push({ action: "edit", resource: "*", effect: "deny" });
   } else if (role.writeScope === "root") {
     rules.push({ action: "edit", resource: "*", effect: "deny" });
-    rules.push({ action: "edit", resource: `${rootDir}/**`, effect: "allow" });
+    const rootPatterns = new Set([`${rootDir}/**`]);
+    const relativeRoot = path.relative(projectDir, rootDir);
+    if (relativeRoot && !relativeRoot.startsWith(`..${path.sep}`) && !path.isAbsolute(relativeRoot)) {
+      rootPatterns.add(`${relativeRoot.split(path.sep).join("/")}/**`);
+    }
+    for (const resource of rootPatterns) {
+      rules.push({ action: "edit", resource, effect: "allow" });
+    }
   } else {
     // M2/M3 hooks and prompts narrow tester/docs scopes beyond this M1 allow rule.
     rules.push({ action: "edit", resource: "*", effect: "allow" });

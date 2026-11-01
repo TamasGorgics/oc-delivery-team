@@ -303,7 +303,7 @@ function applyRoleDraft(
   if (route?.steps === undefined) delete draft.steps;
   setAgentModel(draft, route?.model ?? null);
 
-  const roleRules = rolePermissionRules(role, config.rootDir);
+  const roleRules = rolePermissionRules(role, config.rootDir, config.projectDir);
   draft.permissions = mergeRolePermissions(draft.permissions, roleRules);
 }
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Allow root-scoped artifact roles to write both the absolute `<root>/**` pattern and the project-relative `<root>/**` pattern.
+- Fix blocked artifact writes for researcher, spec, QA, adversary, and retro roles.
+- Add regression coverage for relative and absolute root permission patterns.
+
 ## 0.1.4
 
 - Block the built-in read-only `plan` agent during active delivery runs.

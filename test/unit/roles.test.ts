@@ -64,6 +64,7 @@ describe("role definitions", () => {
     expect(rolePermissionRules(ROLE_BY_ID.spec, "/project/.team")).toEqual([
       { action: "edit", resource: "*", effect: "deny" },
       { action: "edit", resource: "/project/.team/**", effect: "allow" },
+      { action: "edit", resource: ".team/**", effect: "allow" },
       { action: "shell", resource: "*", effect: "deny" },
     ]);
     expect(rolePermissionRules(ROLE_BY_ID.developer, "/project/.team")).toEqual([
