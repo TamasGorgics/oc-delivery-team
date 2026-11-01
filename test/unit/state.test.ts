@@ -29,12 +29,12 @@ function insertRun(db: TeamDatabase, id = "run-1"): void {
 }
 
 describe("database adapter and migrations", () => {
-  test("fresh install applies migration 1 and configures WAL, timeout, and foreign keys", async () => {
+  test("fresh install applies migrations 1 and 2 and configures WAL, timeout, and foreign keys", async () => {
     const dbPath = tempDb();
     const { db, migration } = await openDatabase(dbPath);
     try {
       expect(db.driver).toBe("bun:sqlite");
-      expect(migration).toEqual({ fromVersion: 0, toVersion: 1, applied: [1] });
+      expect(migration).toEqual({ fromVersion: 0, toVersion: 2, applied: [1, 2] });
       expect(db.get<{ journal_mode: string }>("PRAGMA journal_mode")?.journal_mode).toBe("wal");
       expect(db.get<{ timeout: number }>("PRAGMA busy_timeout")?.timeout).toBe(5000);
       expect(db.get<{ foreign_keys: number }>("PRAGMA foreign_keys")?.foreign_keys).toBe(1);
@@ -61,8 +61,11 @@ describe("database adapter and migrations", () => {
         expect(tables.has(expected)).toBe(true);
       }
       expect(
-        db.all<{ version: number; name: string }>("SELECT version, name FROM schema_migrations"),
-      ).toEqual([{ version: 1, name: "initial" }]);
+        db.all<{ version: number; name: string }>("SELECT version, name FROM schema_migrations ORDER BY version"),
+      ).toEqual([
+        { version: 1, name: "initial" },
+        { version: 2, name: "learning indexes" },
+      ]);
     } finally {
       db.close();
     }
@@ -73,9 +76,30 @@ describe("database adapter and migrations", () => {
     (await openDatabase(dbPath)).db.close();
     const { db, migration } = await openDatabase(dbPath);
     try {
-      expect(migration).toEqual({ fromVersion: 1, toVersion: 1, applied: [] });
+      expect(migration).toEqual({ fromVersion: 2, toVersion: 2, applied: [] });
     } finally {
       db.close();
+    }
+  });
+
+  test("upgrades a version-1 database with the M5 learning indexes", async () => {
+    const dbPath = tempDb();
+    const versionOne = await openDatabase(dbPath, { migrations: [MIGRATIONS[0]] });
+    versionOne.db.close();
+
+    const upgraded = await openDatabase(dbPath);
+    try {
+      expect(upgraded.migration).toEqual({ fromVersion: 1, toVersion: 2, applied: [2] });
+      const indexes = new Set(
+        upgraded.db
+          .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index'")
+          .map((row) => row.name),
+      );
+      expect(indexes.has("idx_lessons_status_role_stack")).toBe(true);
+      expect(indexes.has("idx_lessons_source_run")).toBe(true);
+      expect(indexes.has("idx_prompt_versions_role_status")).toBe(true);
+    } finally {
+      upgraded.db.close();
     }
   });
 
@@ -83,32 +107,32 @@ describe("database adapter and migrations", () => {
     const dbPath = tempDb();
     (await openDatabase(dbPath)).db.close();
 
-    const migration2: Migration = {
-      version: 2,
+    const migration3: Migration = {
+      version: 3,
       name: "add-test-table",
       statements: ["CREATE TABLE upgrade_probe (id INTEGER PRIMARY KEY, value TEXT)"],
     };
-    const migration3: Migration = {
-      version: 3,
+    const migration4: Migration = {
+      version: 4,
       name: "add-second-table",
       statements: ["CREATE TABLE upgrade_probe_2 (id INTEGER PRIMARY KEY)"],
     };
 
     const upgraded = await openDatabase(dbPath, {
-      migrations: [...MIGRATIONS, migration2, migration3],
+      migrations: [...MIGRATIONS, migration3, migration4],
     });
     try {
-      expect(upgraded.migration).toEqual({ fromVersion: 1, toVersion: 3, applied: [2, 3] });
+      expect(upgraded.migration).toEqual({ fromVersion: 2, toVersion: 4, applied: [3, 4] });
       expect(
         upgraded.db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version").map((row) => row.version),
-      ).toEqual([1, 2, 3]);
+      ).toEqual([1, 2, 3, 4]);
     } finally {
       upgraded.db.close();
     }
 
-    const reopened = await openDatabase(dbPath, { migrations: [...MIGRATIONS, migration2, migration3] });
+    const reopened = await openDatabase(dbPath, { migrations: [...MIGRATIONS, migration3, migration4] });
     try {
-      expect(reopened.migration).toEqual({ fromVersion: 3, toVersion: 3, applied: [] });
+      expect(reopened.migration).toEqual({ fromVersion: 4, toVersion: 4, applied: [] });
     } finally {
       reopened.db.close();
     }

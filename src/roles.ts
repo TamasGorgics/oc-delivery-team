@@ -186,7 +186,7 @@ export const ROLES: readonly RoleDefinition[] = [
     writesSource: false,
     writeScope: "root",
     shell: "deny",
-    toolNeeds: [...COMMON_TOOLS, "team_stack"],
+    toolNeeds: [...COMMON_TOOLS, "team_stack", "team_lesson_propose"],
   },
 ];
 

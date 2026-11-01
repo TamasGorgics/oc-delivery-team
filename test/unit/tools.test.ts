@@ -93,6 +93,7 @@ describe("tool registration and team_start", () => {
     const harness = await setup();
     expect([...harness.fake.state.tools.keys()].sort()).toEqual([
       "team_advance",
+      "team_lesson_propose",
       "team_loop",
       "team_note",
       "team_rewind",
@@ -116,7 +117,7 @@ describe("tool registration and team_start", () => {
       path: path.join(harness.rootDir, "team.db"),
       driver: "bun:sqlite",
       status: "ready",
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
     expect(Object.keys(snapshot?.models.roles ?? {})).toHaveLength(9);
   });
@@ -550,7 +551,7 @@ describe("database unavailable behavior", () => {
     expect(snapshot?.database.status).toBe("unavailable");
     expect(snapshot?.database.error).toBeTruthy();
     expect(snapshot?.setupWarnings.some((warning) => warning.startsWith("database.open:"))).toBe(true);
-    expect(harness.fake.state.tools.size).toBe(8);
+    expect(harness.fake.state.tools.size).toBe(9);
 
     expect(await call(harness, "team_start", { title: "No db" }))
       .toMatchObject({ ok: false, code: "database_unavailable" });

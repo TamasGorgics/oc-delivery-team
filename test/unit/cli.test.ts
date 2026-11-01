@@ -58,14 +58,14 @@ describe("team CLI", () => {
       database: path.join(rootDir, "team.db"),
       driver: "bun:sqlite",
       from_version: 0,
-      to_version: 1,
-      applied: [1],
+      to_version: 2,
+      applied: [1, 2],
     });
     expect(existsSync(path.join(rootDir, "team.db"))).toBe(true);
 
     const second = await cli(projectDir, ["db", "migrate", "--root", rootDir]);
     expect(second.code).toBe(0);
-    expect(second.json()).toMatchObject({ from_version: 1, to_version: 1, applied: [] });
+    expect(second.json()).toMatchObject({ from_version: 2, to_version: 2, applied: [] });
   });
 
   test("stack shows detection provenance and stored run profiles", async () => {

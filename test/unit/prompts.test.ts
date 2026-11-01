@@ -37,6 +37,9 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS.adversary).toContain("BLOCKERS: 0");
     expect(DEFAULT_PROMPTS.docs).toContain("docs.md");
     expect(DEFAULT_PROMPTS.retro).toContain("retro.md");
+    expect(DEFAULT_PROMPTS.retro).toContain("team_lesson_propose");
+    expect(DEFAULT_PROMPTS.retro).toContain("proposals/<role>.<timestamp>.md");
+    expect(DEFAULT_PROMPTS.retro).not.toContain("Do not propose");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("brainstorm -> spec -> plan -> implement -> test -> qa -> adversary -> docs -> retro -> done");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("ask the human");
   });

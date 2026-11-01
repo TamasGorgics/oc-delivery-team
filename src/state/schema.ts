@@ -80,8 +80,15 @@ export const MIGRATION_1_STATEMENTS: readonly string[] = [
   )`,
 ];
 
+export const MIGRATION_2_STATEMENTS: readonly string[] = [
+  `CREATE INDEX IF NOT EXISTS idx_lessons_status_role_stack ON lessons(status, role, stack_tag)`,
+  `CREATE INDEX IF NOT EXISTS idx_lessons_source_run ON lessons(source_run)`,
+  `CREATE INDEX IF NOT EXISTS idx_prompt_versions_role_status ON prompt_versions(role, status)`,
+];
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial", statements: MIGRATION_1_STATEMENTS },
+  { version: 2, name: "learning indexes", statements: MIGRATION_2_STATEMENTS },
 ];
 
 export interface MigrationResult {

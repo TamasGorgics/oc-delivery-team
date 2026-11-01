@@ -352,8 +352,8 @@ Concrete probes to run:
 
 ### Work
 
-- [ ] Implement `team_lesson_propose`: role, text, optional evidence, optional stack (default `*`); status `proposed`; no agent-callable approval.
-- [ ] Validate lessons: 20–300 chars, actionable imperative sentence, role present; reject duplicates via FTS similarity and return the existing ID; cap proposals per run (default 10).
+- [x] Implement `team_lesson_propose`: role, text, optional evidence, optional stack (default `*`); status `proposed`; no agent-callable approval.
+- [x] Validate lessons: 20–300 chars, actionable imperative sentence, role present; reject duplicates via FTS similarity and return the existing ID; cap proposals per run (default 10).
 - [ ] Implement lesson ranking: approved only; role + `*`; `stack_tag` in the run profile’s languages or `*`; FTS5 BM25 against run title/spec summary; fallback recency + hit count; stable order by rank then id.
 - [ ] Enforce `lessons.topN` (default 8) and `lessons.budgetChars` (default 4000); increment `hit_count`; trace injected lesson IDs.
 - [ ] Implement `inject-lessons` on the actual request/context hook: append the system section; support both string and structured `system` shapes through `compat.ts`; if the agent/role is unavailable, inject role-agnostic lessons only; never throw.
