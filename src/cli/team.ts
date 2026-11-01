@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
+import { readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { ROLE_IDS } from "../roles";
 import {
   parseJsonRecord,
   RunRepository,
@@ -8,10 +10,23 @@ import {
   type ToolCallRow,
 } from "../state/runs";
 import { openDatabase } from "../state/db";
-import { resolveMainRepoDirectory } from "../state/paths";
+import {
+  LESSON_STATUSES,
+  LessonsRepository,
+  isLessonStatus,
+  type LessonStatus,
+} from "../state/lessons";
+import { ensureDirectory, resolveMainRepoDirectory } from "../state/paths";
 import { redactSecrets, redactText } from "../state/privacy";
 import { renderRunReport } from "../state/report";
 import { StackService } from "../stack/service";
+import {
+  LESSON_EXPORT_DIRNAME,
+  STALE_MIN_HIT_COUNT,
+  findStaleLessons,
+  lessonExportStem,
+  renderLessonExport,
+} from "./lessons";
 
 export interface CliIO {
   readonly cwd: string;
@@ -24,6 +39,7 @@ interface ParsedArgs {
   readonly root?: string;
   readonly db?: string;
   readonly run?: string;
+  readonly status?: string;
   readonly open: boolean;
   readonly jsonl: boolean;
   readonly help: boolean;
@@ -38,13 +54,19 @@ Commands:
   team runs [--open]               List runs as JSON
   team report <run>                Render a run report as Markdown
   team trace <run> [--jsonl]       Show tool calls and events as JSON or JSONL
+  team lessons [--status <status>] List lessons
+  team lessons approve|reject|retire <id>
+                                   Change a lesson's status and decided_at
+  team lessons export              Write approved lessons to <root>/lessons-export
+  team lessons stale               Report high-hit approved lessons without evidence
 
 Options:
-  --root <dir>  Data root (default: <main repo>/.team)
-  --db <file>   Database file (default: <root>/team.db)
-  --open        Only include open runs (team runs)
-  --jsonl       Emit line-delimited trace records (team trace)
-  --help        Show this help
+  --root <dir>     Data root (default: <main repo>/.team)
+  --db <file>      Database file (default: <root>/team.db)
+  --status <name>  Filter lessons by proposed, approved, retired, or rejected
+  --open           Only include open runs (team runs)
+  --jsonl          Emit line-delimited trace records (team trace)
+  --help           Show this help
 `;
 
 export async function runTeamCli(
@@ -105,12 +127,19 @@ export async function runTeamCli(
       const runId = commandRunId(rest, parsed, "team trace <run> [--jsonl]");
       return await runTrace(io, parsed, runId);
     }
+    if (command === "lessons") {
+      return await runLessons(io, parsed, rest);
+    }
     throw new CliUsageError(`Unknown command: ${command}`);
   } catch (error) {
     return fail(
       io,
       errorMessage(error),
-      error instanceof CliUsageError ? "usage" : "cli_error",
+      error instanceof CliUsageError
+        ? "usage"
+        : error instanceof CliCommandError
+          ? error.code
+          : "cli_error",
       error instanceof CliUsageError ? 2 : 1,
     );
   }
@@ -293,6 +322,210 @@ async function runTrace(io: CliIO, args: ParsedArgs, runId: string): Promise<num
   }
 }
 
+async function runLessons(
+  io: CliIO,
+  args: ParsedArgs,
+  rest: readonly string[],
+): Promise<number> {
+  const action = rest[0];
+
+  if (action === undefined || action === "list") {
+    if (rest.length > 1) {
+      throw new CliUsageError("Usage: team lessons [--status <status>]");
+    }
+    return await runLessonList(io, args);
+  }
+
+  if (action === "approve" || action === "reject" || action === "retire") {
+    if (rest.length !== 2) {
+      throw new CliUsageError(`Usage: team lessons ${action} <id>`);
+    }
+    if (args.status !== undefined) {
+      throw new CliUsageError("--status applies only when listing lessons.");
+    }
+    return await runLessonStatus(io, args, action, parseLessonId(rest[1]));
+  }
+
+  if (action === "export" || action === "stale") {
+    if (rest.length !== 1) {
+      throw new CliUsageError(`Usage: team lessons ${action}`);
+    }
+    if (args.status !== undefined) {
+      throw new CliUsageError("--status applies only when listing lessons.");
+    }
+    return action === "export"
+      ? await runLessonExport(io, args)
+      : await runLessonStale(io, args);
+  }
+
+  throw new CliUsageError(
+    "Usage: team lessons [--status <status>] | approve|reject|retire <id> | export | stale",
+  );
+}
+
+async function runLessonList(io: CliIO, args: ParsedArgs): Promise<number> {
+  const status = lessonStatusFilter(args);
+  const paths = resolvePaths(io, args);
+  const { db } = await openDatabase(paths.dbPath);
+  try {
+    const lessons = new LessonsRepository(db).list(status ? { status } : {});
+    writeJson(io, {
+      ok: true,
+      database: paths.dbPath,
+      status: status ?? null,
+      count: lessons.length,
+      lessons,
+    });
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
+async function runLessonStatus(
+  io: CliIO,
+  args: ParsedArgs,
+  action: "approve" | "reject" | "retire",
+  id: number,
+): Promise<number> {
+  const target: LessonStatus = action === "approve"
+    ? "approved"
+    : action === "reject"
+      ? "rejected"
+      : "retired";
+  const paths = resolvePaths(io, args);
+  const { db } = await openDatabase(paths.dbPath);
+  try {
+    const lessons = new LessonsRepository(db);
+    const existing = lessons.get(id);
+    if (!existing) {
+      throw new CliCommandError(`Lesson ${id} was not found.`, "lesson_not_found");
+    }
+    if (action === "retire" && existing.status !== "approved" && existing.status !== "retired") {
+      throw new CliCommandError(
+        `Only approved lessons can be retired; lesson ${id} is ${existing.status}.`,
+        "invalid_transition",
+      );
+    }
+
+    const changed = existing.status !== target;
+    const lesson = changed ? lessons.setStatus(id, target) : existing;
+    writeJson(io, {
+      ok: true,
+      database: paths.dbPath,
+      action,
+      previous_status: existing.status,
+      changed,
+      lesson,
+    });
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
+async function runLessonExport(io: CliIO, args: ParsedArgs): Promise<number> {
+  const paths = resolvePaths(io, args);
+  const { db } = await openDatabase(paths.dbPath);
+  try {
+    const approved = new LessonsRepository(db).list({ status: "approved" });
+    const byRole = new Map<string, typeof approved>();
+    for (const lesson of approved) {
+      const group = byRole.get(lesson.role);
+      if (group) group.push(lesson);
+      else byRole.set(lesson.role, [lesson]);
+    }
+
+    const groups = [...byRole.entries()].sort(([left], [right]) => compareLessonRoles(left, right));
+    const directory = path.join(paths.rootDir, LESSON_EXPORT_DIRNAME);
+    ensureDirectory(directory);
+
+    const desired = new Set<string>();
+    const files = groups.map(([role, lessons]) => {
+      const file = path.join(directory, `${lessonExportStem(role)}.md`);
+      writeFileSync(file, renderLessonExport(role, lessons), "utf8");
+      desired.add(path.basename(file));
+      return { role, path: file, count: lessons.length };
+    });
+
+    const knownFiles = new Set([
+      ...ROLE_IDS.map((role) => `${lessonExportStem(role)}.md`),
+      `${lessonExportStem("*")}.md`,
+    ]);
+    const removed: string[] = [];
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+      if (!knownFiles.has(entry.name) || desired.has(entry.name)) continue;
+      unlinkSync(path.join(directory, entry.name));
+      removed.push(entry.name);
+    }
+    removed.sort();
+
+    writeJson(io, {
+      ok: true,
+      database: paths.dbPath,
+      directory,
+      count: approved.length,
+      roles: groups.map(([role]) => role),
+      files,
+      removed,
+    });
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
+async function runLessonStale(io: CliIO, args: ParsedArgs): Promise<number> {
+  const paths = resolvePaths(io, args);
+  const { db } = await openDatabase(paths.dbPath);
+  try {
+    const approved = new LessonsRepository(db).list({ status: "approved" });
+    const stale = findStaleLessons(approved);
+    writeJson(io, {
+      ok: true,
+      database: paths.dbPath,
+      report_only: true,
+      criteria: {
+        status: "approved",
+        min_hit_count: STALE_MIN_HIT_COUNT,
+        evidence: "missing",
+      },
+      count: stale.length,
+      lessons: stale,
+    });
+    return 0;
+  } finally {
+    db.close();
+  }
+}
+
+function lessonStatusFilter(args: ParsedArgs): LessonStatus | undefined {
+  if (args.status === undefined) return undefined;
+  if (!isLessonStatus(args.status)) {
+    throw new CliUsageError(`--status must be one of ${LESSON_STATUSES.join(", ")}.`);
+  }
+  return args.status;
+}
+
+function parseLessonId(value: string | undefined): number {
+  if (!value || !/^\d+$/.test(value)) {
+    throw new CliUsageError("Lesson id must be a positive integer.");
+  }
+  const id = Number(value);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new CliUsageError("Lesson id must be a positive integer.");
+  }
+  return id;
+}
+
+function compareLessonRoles(left: string, right: string): number {
+  if (left === right) return 0;
+  if (left === "*") return -1;
+  if (right === "*") return 1;
+  return left.localeCompare(right);
+}
+
 function runSummary(run: RunRow, now: number): Record<string, unknown> {
   const created = Date.parse(run.created_at);
   const ageMs = Number.isFinite(created) ? Math.max(0, now - created) : null;
@@ -437,6 +670,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   let root: string | undefined;
   let db: string | undefined;
   let run: string | undefined;
+  let status: string | undefined;
   let open = false;
   let jsonl = false;
   let help = false;
@@ -479,6 +713,14 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       run = requireValue(arg, argv[++index]);
       continue;
     }
+    if (arg.startsWith("--status=")) {
+      status = requireValue("--status", arg.slice("--status=".length));
+      continue;
+    }
+    if (arg === "--status") {
+      status = requireValue(arg, argv[++index]);
+      continue;
+    }
     if (arg.startsWith("-")) throw new CliUsageError(`Unknown option: ${arg}`);
     positionals.push(arg);
   }
@@ -488,6 +730,7 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     ...(root ? { root } : {}),
     ...(db ? { db } : {}),
     ...(run ? { run } : {}),
+    ...(status ? { status } : {}),
     open,
     jsonl,
     help,
@@ -516,6 +759,13 @@ class CliUsageError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CliUsageError";
+  }
+}
+
+class CliCommandError extends Error {
+  constructor(message: string, readonly code: string) {
+    super(message);
+    this.name = "CliCommandError";
   }
 }
 

@@ -358,7 +358,7 @@ Concrete probes to run:
 - [x] Enforce `lessons.topN` (default 8) and `lessons.budgetChars` (default 4000); increment `hit_count`; trace injected lesson IDs.
 - [x] Implement `inject-lessons` on the actual request/context hook: append the system section; support both string and structured `system` shapes through `compat.ts`; if the agent/role is unavailable, inject role-agnostic lessons only; never throw.
 - [x] Keep the request hook fast (target < 10 ms typical) with indexed FTS and small N; no network calls in hooks.
-- [ ] Implement CLI: `team lessons [--status proposed]`, `approve|reject|retire <id>`, `export`, and `stale` (report only).
+- [x] Implement CLI: `team lessons [--status proposed]`, `approve|reject|retire <id>`, `export`, and `stale` (report only).
 - [ ] Implement prompt proposals: retro writes a complete proposed prompt to `<root>/proposals/<role>.<ts>.md`; record a `prompt_versions` row on transition out of retro (scan the directory) or via an edit hook if verified.
 - [ ] Implement CLI: `team prompts list|approve|reject|diff`; approval moves the proposal to `<root>/prompts/<role>.md`, supersedes the previous version, and triggers reload via the verified mechanism (marker file or `ctx.agent.reload()`) or documents restart.
 - [ ] Add an approved-prompt reload test or a documented restart path; ensure pending proposals are never used.
@@ -366,12 +366,12 @@ Concrete probes to run:
 
 ### Acceptance
 
-- [ ] Proposed lessons are never injected; approved lessons are.
-- [ ] Injection respects `topN`, `budgetChars`, role, stack tags, and stable order.
-- [ ] Duplicates are rejected with the existing ID; per-run cap works.
+- [x] Proposed lessons are never injected; approved lessons are.
+- [x] Injection respects `topN`, `budgetChars`, role, stack tags, and stable order.
+- [x] Duplicates are rejected with the existing ID; per-run cap works.
 - [ ] Approving a prompt changes the agent prompt after reload/restart, as documented.
-- [ ] Agents have no approval path; CLI approval changes status and timestamps.
-- [ ] Lesson export produces `<root>/lessons-export/<role>.md`.
+- [x] Agents have no approval path; CLI approval changes status and timestamps.
+- [x] Lesson export produces `<root>/lessons-export/<role>.md`.
 
 **Suggested commits:** `feat: add lesson proposal and validation` → `feat: inject approved lessons` → `feat: add lesson cli` → `feat: add prompt proposal approval flow` → `test: cover learning loop`.
 

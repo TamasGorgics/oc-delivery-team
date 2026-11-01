@@ -4,6 +4,8 @@ import type { TeamDatabase } from "./db";
 export type LessonStatus = "proposed" | "approved" | "retired" | "rejected";
 export type LessonRole = RoleId | "*";
 
+export const LESSON_STATUSES = ["proposed", "approved", "retired", "rejected"] as const;
+
 export const MIN_LESSON_CHARS = 20;
 export const MAX_LESSON_CHARS = 300;
 export const MAX_LESSONS_PER_RUN = 10;
@@ -142,6 +144,10 @@ const IMPERATIVE_OPENERS = new Set([
 
 export function isLessonRole(value: unknown): value is LessonRole {
   return value === "*" || isRoleId(value);
+}
+
+export function isLessonStatus(value: unknown): value is LessonStatus {
+  return typeof value === "string" && (LESSON_STATUSES as readonly string[]).includes(value);
 }
 
 export function validateLessonText(raw: string): LessonTextValidation {

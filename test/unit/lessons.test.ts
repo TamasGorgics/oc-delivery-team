@@ -161,7 +161,7 @@ describe("lesson repository", () => {
     const harness = await setup();
     await call(harness, "team_start", { title: "SQLite migration rollout" });
 
-    const ids = await withLessons(harness, (lessons) => {
+    const ids = await withLessons(harness, (lessons, db) => {
       const add = (role: "developer" | "*" | "qa", text: string, stackTag: string, status = "approved") => {
         const id = lessons.insert({ role, text, stackTag });
         if (status !== "proposed") lessons.setStatus(id, status as "approved" | "rejected");
@@ -197,6 +197,7 @@ describe("lesson repository", () => {
         "typescript",
         "rejected",
       );
+      db.run("UPDATE lessons SET created_at = '2026-01-01T00:00:00.000Z'");
       return { ranked, fallback, wildcard };
     });
 
