@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2
+
+- Raise the spec agent's step budget from 20 to 40 for its two artifacts.
+- Require the spec agent to create `spec.md` and `plan.md` before deep exploration.
+- On a step-limit failure, retry the same role with the exact artifact path instead of using a scribe role.
+- Keep artifact writes restricted to the run directory.
+
 ## 0.1.1
 
 - Correct GitHub-based installation and upgrade instructions; no local checkout or project `node_modules` is required.

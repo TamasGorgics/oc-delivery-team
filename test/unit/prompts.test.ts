@@ -28,6 +28,8 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS.researcher).toContain("brainstorm.md");
     expect(DEFAULT_PROMPTS.spec).toContain("spec.md");
     expect(DEFAULT_PROMPTS.spec).toContain("plan.md");
+    expect(DEFAULT_PROMPTS.spec).toContain("Create both artifacts early");
+    expect(DEFAULT_PROMPTS.spec).toContain("Do not spend the full step budget");
     expect(DEFAULT_PROMPTS.spec).toContain("STATUS: DRAFT");
     expect(DEFAULT_PROMPTS.developer).toContain("impl-notes.md");
     expect(DEFAULT_PROMPTS.tester).toContain("test-report.md");
@@ -45,6 +47,8 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("team_worktree");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("exact `artifact_dir`");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("never ask a different role to persist another role's artifact");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("If a subagent reaches its step limit");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("do not use another role as a scribe");
     expect(DEFAULT_PROMPTS.developer).toContain("unique short name");
   });
 

@@ -99,7 +99,7 @@ export const ROLES: readonly RoleDefinition[] = [
     description: "Turns the brainstorm into a specification and implementation plan.",
     mode: "subagent",
     tier: "reasoning",
-    maxSteps: 20,
+    maxSteps: 40,
     artifacts: ["spec.md", "plan.md"],
     promptId: "spec",
     readOnly: false,

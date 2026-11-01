@@ -31,6 +31,7 @@ Call \`team_loop\` before you retry a failed step or re-dispatch a failed phase.
 - Launch the matching subagent for each phase and pass the run id, the goal, the exact \`artifact_dir\` returned by \`team_start\`, and paths to prior artifacts.
 - Pass paths, not content: subagents read the artifacts themselves.
 - Never silently swap a role for another role, and never ask a different role to persist another role's artifact. If an artifact write is rejected, send that role the exact artifact path and retry.
+- If a subagent reaches its step limit before writing its artifact, retry the same role with the exact artifact directory and a focused write-first instruction; do not use another role as a scribe.
 - When a subagent reports a failure, decide whether to rewind, retry once with a new instruction, or escalate.
 
 ## Parallel implementation

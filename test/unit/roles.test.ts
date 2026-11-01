@@ -17,7 +17,7 @@ describe("role definitions", () => {
     expect(ROLE_BY_ID["team-lead"].mode).toBe("primary");
     expect(ROLE_BY_ID["team-lead"].maxSteps).toBeUndefined();
     expect(ROLE_BY_ID.researcher).toMatchObject({ tier: "fast", maxSteps: 25, artifacts: ["brainstorm.md"] });
-    expect(ROLE_BY_ID.spec).toMatchObject({ tier: "reasoning", maxSteps: 20, artifacts: ["spec.md", "plan.md"] });
+    expect(ROLE_BY_ID.spec).toMatchObject({ tier: "reasoning", maxSteps: 40, artifacts: ["spec.md", "plan.md"] });
     expect(ROLE_BY_ID.developer).toMatchObject({ tier: "coding", maxSteps: 80, writesSource: true });
     expect(ROLE_BY_ID.tester).toMatchObject({ tier: "coding", maxSteps: 50, writeScope: "tests" });
     expect(ROLE_BY_ID.qa).toMatchObject({ tier: "coding", maxSteps: 30, readOnly: false });
