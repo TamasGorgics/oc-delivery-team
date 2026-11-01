@@ -13,7 +13,7 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 | **M2** | State machine, tools, SQLite, Stack Profile | L | M1 | ☑ Done |
 | **M3** | Gating hooks | M | M2 | ☑ Done |
 | **M4** | Observability: tracing, events, CLI reports | M | M2, M3 | ☑ Done |
-| **M5** | Learning loop: lessons, prompt proposals, approvals | L | M2, M4 | ☐ Not started |
+| **M5** | Learning loop: lessons, prompt proposals, approvals | L | M2, M4 | ☑ Done |
 | **M6** | Parallel worktrees and eval harness (optional flag) | L | M2, M4 | ☐ Not started |
 | **M7** | Packaging, documentation, clean-install release | M | all | ☐ Not started |
 
