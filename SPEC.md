@@ -612,12 +612,12 @@ Agents must have **no** way to invoke these (they are not tools). Note in docs: 
 
 ## 14. Evals (milestone 6, can ship after core)
 
-- `evals/tasks/<name>/` contains `task.md` (the goal given to `/team`), `fixture/` (small repo), `criteria.json` (checks: files exist, tests pass, commands exit 0, regex on artifacts).
-- `team eval run` copies the fixture to a temp dir, starts a headless OpenCode session with the plugin **[VERIFY how: `opencode2` CLI/API]**, runs the task, evaluates criteria, stores `eval_runs`.
+- `evals/tasks/<name>/` contains `task.md` (the goal given to `team-lead`), `fixture/` (small repo), and versioned `criteria.json` checks for file existence, regex matches, and a named command from the fixture's Stack Profile.
+- `team eval run [task...] [--models <preset>]` copies each fixture to a temporary project, seeds the currently approved prompt set, starts the pluggable headless runner (default: `opencode --standalone run --print-logs --auto`), evaluates criteria, and stores one `eval_runs` row per task in the main `.team/team.db`.
 - Purpose: when a prompt change is proposed/approved, rerun evals and compare scores (`team eval report --by prompt_set_sha`). Humans use this to decide on approval.
 - **Stack coverage:** ship at least three fixtures on different ecosystems (for example a TypeScript project, a Go project and a Python project, each with a trivial feature request) to demonstrate stack-agnosticism. `criteria.json` checks must use the fixture's own Stack Profile commands, not hardcoded ones.
-- **Model comparison:** `team eval run --models <preset>` runs the same tasks under different model routings and stores `model_set_sha`, so `team eval report` can compare score, loops and cost across model sets.
-- Mark the headless-run mechanism as pluggable; if headless runs are impractical, ship the harness with a stub runner and document the gap.
+- **Model comparison:** model presets are user-authored `evals/models/<preset>.json` files with optional `hostModel` and the existing delivery-team `models` routing object. Store SHA-256 hashes of the effective approved prompt set and resolved model set; `team eval report [--by prompt_set_sha|model_set_sha|both]` compares score, loops and cost.
+- Keep the headless runner pluggable. Tests inject a deterministic fake runner; use the real headless adapter for human-requested eval runs. If headless execution becomes unavailable, a documented stub runner is acceptable.
 
 ---
 

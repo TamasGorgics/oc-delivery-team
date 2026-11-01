@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "criteria": [
+    { "id": "implementation-file", "type": "file_exists", "path": "src/slug.ts", "weight": 1 },
+    { "id": "exported-function", "type": "regex", "path": "src/slug.ts", "pattern": "export\\s+function\\s+slugifyTitle", "flags": "", "weight": 1 },
+    { "id": "profile-tests", "type": "stack_command", "key": "test", "expectedExitCode": 0, "weight": 2 }
+  ]
+}

@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { Plugin } from "@opencode/plugin";
 import {
@@ -19,8 +18,7 @@ import { registerGate } from "./hooks/gate";
 import { createLessonInjectionHandler } from "./hooks/lessons";
 import { registerTraceHooks } from "./hooks/trace";
 import { resolveModels, type ModelResolution } from "./models";
-import { getDefaultPrompt } from "./prompts";
-import { promptProposalSha } from "./prompts/proposals";
+import { resolveRolePrompt } from "./prompts/resolve";
 import {
   enabledRoles,
   rolePermissionRules,
@@ -310,19 +308,7 @@ function applyRoleDraft(
 }
 
 function resolvePrompt(rootDir: string, role: RoleId, prompts: PromptRepository | null): string {
-  const defaultPrompt = getDefaultPrompt(role);
-  if (!prompts) return defaultPrompt;
-  const overridePath = path.join(rootDir, "prompts", `${role}.md`);
-  try {
-    const raw = readFileSync(overridePath, "utf8");
-    const override = raw.trim();
-    if (!override) return defaultPrompt;
-    const approved = prompts.list({ role, status: "approved" })
-      .some((version) => version.sha === promptProposalSha(raw));
-    return approved ? override : defaultPrompt;
-  } catch {
-    return defaultPrompt;
-  }
+  return resolveRolePrompt(rootDir, role, prompts).text;
 }
 
 function mergeRolePermissions(existing: AgentDraft["permissions"], additions: PermissionRule[]) {

@@ -2,6 +2,11 @@
 import { randomUUID } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { executeEvalTasks } from "../evals/service";
+import { buildEvalReport, type EvalReportDimension } from "../evals/report";
+import { OpenCodeCliEvalRunner } from "../evals/runner";
+import { EVALS_PACKAGE_ROOT, loadEvalModelPreset, loadEvalTasks } from "../evals/tasks";
+import type { EvalRunner } from "../evals/runner";
 import { ROLE_IDS, isRoleId, type RoleId } from "../roles";
 import {
   parseJsonRecord,
@@ -11,6 +16,7 @@ import {
   type ToolCallRow,
 } from "../state/runs";
 import { openDatabase } from "../state/db";
+import { EvalRepository } from "../state/evals";
 import {
   LESSON_STATUSES,
   LessonsRepository,
@@ -46,6 +52,8 @@ interface ParsedArgs {
   readonly db?: string;
   readonly run?: string;
   readonly status?: string;
+  readonly modelsPreset?: string;
+  readonly by?: string;
   readonly open: boolean;
   readonly jsonl: boolean;
   readonly help: boolean;
@@ -69,11 +77,17 @@ Commands:
   team prompts approve <file>      Approve a proposal and require an OpenCode restart
   team prompts reject <file>       Reject a proposal
   team prompts diff <file>         Compare a proposal with the current prompt
+  team eval run [task...] [--models <preset>]
+                                   Run fixture evaluations with OpenCode
+  team eval report [--by <dimension>]
+                                   Compare evaluation scores, loops, and cost
 
 Options:
   --root <dir>     Data root (default: <main repo>/.team)
   --db <file>      Database file (default: <root>/team.db)
   --status <name>  Filter lessons by proposed, approved, retired, or rejected
+  --models <name>  Model preset from evals/models/<name>.json (team eval run)
+  --by <dimension> Group eval report by prompt_set_sha, model_set_sha, or both
   --open           Only include open runs (team runs)
   --jsonl          Emit line-delimited trace records (team trace)
   --help           Show this help
@@ -82,6 +96,7 @@ Options:
 export async function runTeamCli(
   argv: readonly string[],
   overrides: Partial<CliIO> = {},
+  evalRunner: EvalRunner = new OpenCodeCliEvalRunner(),
 ): Promise<number> {
   const io: CliIO = {
     cwd: overrides.cwd ?? process.cwd(),
@@ -107,6 +122,9 @@ export async function runTeamCli(
 
   const [command, ...rest] = parsed.positionals;
   try {
+    if (command !== "eval" && (parsed.modelsPreset !== undefined || parsed.by !== undefined)) {
+      throw new CliUsageError("--models and --by are supported only by team eval.");
+    }
     if (command === "db") {
       if (rest.length !== 1 || rest[0] !== "migrate") {
         throw new CliUsageError("db currently supports only: team db migrate");
@@ -142,6 +160,9 @@ export async function runTeamCli(
     }
     if (command === "prompts") {
       return await runPrompts(io, parsed, rest);
+    }
+    if (command === "eval") {
+      return await runEval(io, parsed, rest, evalRunner);
     }
     throw new CliUsageError(`Unknown command: ${command}`);
   } catch (error) {
@@ -749,6 +770,76 @@ async function runPromptDecision(
   }
 }
 
+async function runEval(
+  io: CliIO,
+  args: ParsedArgs,
+  rest: readonly string[],
+  runner: EvalRunner,
+): Promise<number> {
+  if (args.status !== undefined || args.run !== undefined || args.open || args.jsonl) {
+    throw new CliUsageError("Eval commands accept --root, --db, --models (run), and --by (report) only.");
+  }
+  const action = rest[0];
+  if (action === "run") {
+    if (args.by !== undefined) throw new CliUsageError("--by applies only to team eval report.");
+    const paths = resolvePaths(io, args);
+    const tasks = loadEvalTasks(rest.slice(1));
+    const modelPreset = args.modelsPreset ? loadEvalModelPreset(args.modelsPreset) : undefined;
+    const { db } = await openDatabase(paths.dbPath);
+    try {
+      const results = await executeEvalTasks({
+        rootDir: paths.rootDir,
+        promptRepository: new PromptRepository(db),
+        evalRepository: new EvalRepository(db),
+        tasks,
+        ...(modelPreset ? { modelPreset } : {}),
+        runner,
+        packageRoot: EVALS_PACKAGE_ROOT,
+      });
+      writeJson(io, {
+        ok: true,
+        database: paths.dbPath,
+        model_preset: modelPreset?.name ?? null,
+        count: results.length,
+        evaluations: results,
+      });
+      return 0;
+    } finally {
+      db.close();
+    }
+  }
+
+  if (action === "report") {
+    if (rest.length > 1) throw new CliUsageError("Usage: team eval report [--by both|prompt_set_sha|model_set_sha]");
+    if (args.modelsPreset !== undefined) throw new CliUsageError("--models applies only to team eval run.");
+    const dimension = evalReportDimension(args.by);
+    const paths = resolvePaths(io, args);
+    const { db } = await openDatabase(paths.dbPath);
+    try {
+      const rows = new EvalRepository(db).list();
+      const groups = buildEvalReport(rows, dimension);
+      writeJson(io, {
+        ok: true,
+        database: paths.dbPath,
+        count: rows.length,
+        by: dimension,
+        groups,
+      });
+      return 0;
+    } finally {
+      db.close();
+    }
+  }
+
+  throw new CliUsageError("Usage: team eval run [task...] [--models <preset>] | report [--by both|prompt_set_sha|model_set_sha]");
+}
+
+function evalReportDimension(value: string | undefined): EvalReportDimension {
+  if (value === undefined || value === "both") return "both";
+  if (value === "prompt_set_sha" || value === "model_set_sha") return value;
+  throw new CliUsageError("--by must be both, prompt_set_sha, or model_set_sha.");
+}
+
 function approvePromptFile(
   rootDir: string,
   proposalFile: string,
@@ -1022,6 +1113,8 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
   let db: string | undefined;
   let run: string | undefined;
   let status: string | undefined;
+  let modelsPreset: string | undefined;
+  let by: string | undefined;
   let open = false;
   let jsonl = false;
   let help = false;
@@ -1064,6 +1157,22 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
       run = requireValue(arg, argv[++index]);
       continue;
     }
+    if (arg.startsWith("--models=")) {
+      modelsPreset = requireValue("--models", arg.slice("--models=".length));
+      continue;
+    }
+    if (arg === "--models") {
+      modelsPreset = requireValue(arg, argv[++index]);
+      continue;
+    }
+    if (arg.startsWith("--by=")) {
+      by = requireValue("--by", arg.slice("--by=".length));
+      continue;
+    }
+    if (arg === "--by") {
+      by = requireValue(arg, argv[++index]);
+      continue;
+    }
     if (arg.startsWith("--status=")) {
       status = requireValue("--status", arg.slice("--status=".length));
       continue;
@@ -1082,6 +1191,8 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
     ...(db ? { db } : {}),
     ...(run ? { run } : {}),
     ...(status ? { status } : {}),
+    ...(modelsPreset ? { modelsPreset } : {}),
+    ...(by ? { by } : {}),
     open,
     jsonl,
     help,

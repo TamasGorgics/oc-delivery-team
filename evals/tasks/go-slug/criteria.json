@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "criteria": [
+    { "id": "implementation-file", "type": "file_exists", "path": "slug.go", "weight": 1 },
+    { "id": "function-declaration", "type": "regex", "path": "slug.go", "pattern": "func\\s+slugifyTitle\\s*\\(", "flags": "", "weight": 1 },
+    { "id": "profile-tests", "type": "stack_command", "key": "test", "expectedExitCode": 0, "weight": 2 }
+  ]
+}

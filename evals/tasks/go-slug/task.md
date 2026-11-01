@@ -1,0 +1,1 @@
+Implement `slugifyTitle` in `slug.go`. Convert input to lowercase, replace each run of non-ASCII-alphanumeric characters with one hyphen, and trim hyphens from both ends. Keep the function dependency-free and package it as `slug`. Run the fixture's Stack Profile test command.

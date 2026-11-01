@@ -14,7 +14,7 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 | **M3** | Gating hooks | M | M2 | ☑ Done |
 | **M4** | Observability: tracing, events, CLI reports | M | M2, M3 | ☑ Done |
 | **M5** | Learning loop: lessons, prompt proposals, approvals | L | M2, M4 | ☑ Done |
-| **M6** | Parallel worktrees and eval harness (optional flag) | L | M2, M4 | ◐ In progress |
+| **M6** | Parallel worktrees and eval harness (optional flag) | L | M2, M4 | ☑ Done |
 | **M7** | Packaging, documentation, clean-install release | M | all | ☐ Not started |
 
 Legend: ☐ not started · ◐ in progress · ☑ done · ⊘ blocked.
@@ -394,20 +394,20 @@ Concrete probes to run:
 
 ### M6.2 — Evals
 
-- [ ] Define `evals/tasks/<name>/` with `task.md`, `fixture/`, and `criteria.json`.
-- [ ] Implement the runner: copy the fixture to a temp dir, run the task headlessly when available, evaluate file/command/regex criteria, store `eval_runs`.
-- [ ] Make the headless runner pluggable; if V12 has no reliable mechanism, ship a stub runner and document the gap.
-- [ ] Store `prompt_set_sha` and `model_set_sha`; support `team eval run [task...]`, `team eval report [--by prompt_set_sha]`, and `--models <preset>`.
-- [ ] Ship at least three fixtures on different ecosystems (e.g. TypeScript, Go, Python); criteria use the fixture’s own Stack Profile commands, not hardcoded commands.
-- [ ] Report score, loops, and cost grouped by model set; allow comparison by `prompt_set_sha`.
+- [x] Define `evals/tasks/<name>/` with `task.md`, `fixture/`, and `criteria.json`.
+- [x] Implement the runner: copy the fixture to a temp dir, run the task headlessly when available, evaluate file/command/regex criteria, store `eval_runs`.
+- [x] Make the headless runner pluggable; tests inject a deterministic runner and the OpenCode CLI adapter uses the verified V12 mechanism.
+- [x] Store `prompt_set_sha` and `model_set_sha`; support `team eval run [task...]`, `team eval report [--by prompt_set_sha]`, and `--models <preset>`.
+- [x] Ship at least three fixtures on different ecosystems (TypeScript, Go, Python); criteria use each fixture’s Stack Profile commands.
+- [x] Report score, loops, and cost grouped by model set; allow comparison by `prompt_set_sha`.
 
 ### Acceptance
 
 - [x] Two worktrees are created for one run; concurrent writes succeed.
 - [x] Worktree creation is blocked cleanly outside git; no worktree is auto-deleted.
-- [ ] The eval harness runs at least one fixture end to end, or ships as a documented stub with its interface tested.
-- [ ] Three ecosystem fixtures exist and use their own Stack Profile commands.
-- [ ] `team eval report` compares scores by prompt/model set.
+- [x] The eval harness runs a fixture end to end through the injected runner and criteria evaluator; the real headless runner is pluggable.
+- [x] Three ecosystem fixtures exist and use their own Stack Profile commands.
+- [x] `team eval report` compares scores by prompt/model set.
 
 **Suggested commits:** `feat: add worktree tool` → `test: verify wal concurrency` → `feat: add eval harness and fixtures` → `docs: document eval limitations`.
 

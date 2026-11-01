@@ -1,0 +1,1 @@
+Implement `slugify_title` in `slug.py`. Convert input to lowercase, replace each run of non-ASCII-alphanumeric characters with one hyphen, and trim hyphens from both ends. Keep the function dependency-free and run the fixture's Stack Profile test command.
