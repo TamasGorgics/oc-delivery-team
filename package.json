@@ -1,15 +1,42 @@
 {
   "name": "opencode-delivery-team",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "A software delivery team as an OpenCode V2 plugin",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TamasGorgics/oc-delivery-team.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TamasGorgics/oc-delivery-team/issues"
+  },
+  "homepage": "https://github.com/TamasGorgics/oc-delivery-team#readme",
   "packageManager": "bun@1.4.4",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "team": "./src/cli/team.ts"
+  },
+  "files": [
+    "src",
+    "evals",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "team": "bun src/cli/team.ts"
+    "test:prompts": "bun test test/unit/prompts.test.ts",
+    "team": "bun src/cli/team.ts",
+    "pack:check": "npm pack --dry-run --json --ignore-scripts"
   },
   "dependencies": {
     "@opencode/plugin": "2.2.0"

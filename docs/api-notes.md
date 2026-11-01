@@ -1,6 +1,6 @@
 # OpenCode V2 API notes
 
-Status: M4 implementation and verification complete (2026-10-31). All V1–V18 items have an answer and a fallback.
+Status: M0–M6 verification complete; M7 packaging and release checks are in progress (2026-11-01). All V1–V18 items have an answer and a fallback.
 
 ## Toolchain and loading
 
@@ -166,3 +166,10 @@ opencode --standalone run --print-logs --auto --model opencode/deepseek-v4.1-fla
 - **Snapshots and results.** `prompt_set_sha` hashes the effective built-in/approved prompts; `model_set_sha` hashes the preset plus the resolved model snapshot. One `eval_runs` row is stored in the caller's main database per task. `score` is a weighted percentage (0–100); `details_json` retains per-criterion outcomes, status, run id, loops, cost, tokens, and runner result without storing full command output.
 - **Reports.** `team eval report [--by both|prompt_set_sha|model_set_sha]` groups results by prompt/model snapshots and reports count, mean score, loops, cost, and per-task statuses. Evaluations remain CLI-only; they are not registered as an agent tool.
 - **Verification.** `bun run typecheck` is clean. `bun test` passes 172 tests / 1,205 assertions across 24 files. The end-to-end eval pipeline test uses the `ts-slug` fixture with an injected runner, executes its Stack Profile test command, and verifies persisted SHA snapshots, score, loops, cost, and report grouping. No provider call is made by automated tests; live headless runs require a configured model/provider.
+
+## M7 packaging and release
+
+- **Package metadata.** `package.json` now exposes the plugin through `exports`, installs the human CLI as `bin.team`, uses an explicit `files` allowlist, declares repository/bug/homepage metadata, and is publishable (`private` removed). The tarball contains `src/`, `evals/`, `docs/`, `README.md`, `LICENSE`, and `CHANGELOG.md`; tests, local `.opencode` loaders, `.team`, `SPEC.md`, `ROADMAP.md`, and the root lockfile are excluded.
+- **Source entry decision.** The package ships TypeScript source and relies on the verified Bun host. A clean project installed the tarball, loaded the package through `plugins: [{ "package": "./node_modules/opencode-delivery-team", ... }]`, showed all nine team agents and the three team commands, and ran `team db migrate` and `team runs` through `bunx --no-install -p opencode-delivery-team`.
+- **Documentation.** `README.md` covers installation, package loading, quick start, all option groups, model placeholders, worktrees, human approvals, prompt restart behavior, evals, version-control guidance, and limitations. `docs/architecture.md` summarizes SPEC §3/§4. `docs/release.md` and `CHANGELOG.md` provide the release checklist and v0.1.0 entry.
+- **Verification.** `bun run typecheck` is clean. `bun test` passes 174 tests / 1,223 assertions across 25 files, including package metadata and `npm pack --dry-run` manifest checks. `npm pack` produced a 123.6 kB tarball with 87 intended files. The model-driven `/team` quick-start smoke was blocked before tool execution by the provider's free-usage limit; the command/agent registration and package-load path were verified separately.

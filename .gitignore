@@ -1,7 +1,11 @@
 node_modules/
 dist/
 coverage/
+
+# Ignore only the SQLite runtime files. Commit approved prompts, proposals,
+# lesson exports, and any run artifacts your team wants to retain.
 .team/team.db*
+
 *.tsbuildinfo
 .DS_Store
 *.log

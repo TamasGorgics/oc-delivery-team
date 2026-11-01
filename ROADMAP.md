@@ -15,7 +15,7 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 | **M4** | Observability: tracing, events, CLI reports | M | M2, M3 | ☑ Done |
 | **M5** | Learning loop: lessons, prompt proposals, approvals | L | M2, M4 | ☑ Done |
 | **M6** | Parallel worktrees and eval harness (optional flag) | L | M2, M4 | ☑ Done |
-| **M7** | Packaging, documentation, clean-install release | M | all | ☐ Not started |
+| **M7** | Packaging, documentation, clean-install release | M | all | ◐ In progress |
 
 Legend: ☐ not started · ◐ in progress · ☑ done · ⊘ blocked.
 
@@ -419,22 +419,22 @@ Concrete probes to run:
 
 ### Work
 
-- [ ] Finalize `package.json`: `type`, `exports`, `bin`, `files`, runtime `dependencies` for every import, `peerDependencies`/supported OpenCode range, semver version.
-- [ ] Verify no native modules; all SQLite paths use `bun:sqlite` or `node:sqlite`.
-- [ ] Write `README.md`: install, configuration options, quick start, illustrative model presets (placeholders only), worktree setup, approval workflow, reload/restart behavior, supported OpenCode range.
-- [ ] Write `docs/architecture.md` from SPEC §3; keep `docs/api-notes.md` current with every deviation.
-- [ ] Add `.gitignore` guidance: ignore `team.db*`, commit `prompts/` and `lessons-export/`.
-- [ ] Run `npm pack`, install the tarball into a clean project, and load the plugin there.
+- [x] Finalize `package.json`: `type`, `exports`, `bin`, `files`, runtime `dependencies` for every import, `peerDependencies`/supported OpenCode range, semver version.
+- [x] Verify no native modules; all SQLite paths use `bun:sqlite` or `node:sqlite`.
+- [x] Write `README.md`: install, configuration options, quick start, illustrative model presets (placeholders only), worktree setup, approval workflow, reload/restart behavior, supported OpenCode range.
+- [x] Write `docs/architecture.md` from SPEC §3; keep `docs/api-notes.md` current with every deviation.
+- [x] Add `.gitignore` guidance: ignore `team.db*`, commit `prompts/` and `lessons-export/`.
+- [x] Run `npm pack`, install the tarball into a clean project, and load the plugin there.
 - [ ] Verify the README quick start drives a toy task through `/team` and `team report`.
-- [ ] Add release checklist: typecheck, tests, prompt-neutrality lint, clean-install smoke test, version bump, changelog.
-- [ ] Note v1 non-goals and known limitations (no dashboard, no OTel, no auto-approval, worktrees optional).
+- [x] Add release checklist: typecheck, tests, prompt-neutrality lint, clean-install smoke test, version bump, changelog.
+- [x] Note v1 non-goals and known limitations (no dashboard, no OTel, no auto-approval, worktrees optional).
 
 ### Acceptance
 
-- [ ] Clean-project install loads the plugin.
+- [x] Clean-project install loads the plugin.
 - [ ] README quick start works verbatim.
-- [ ] All runtime imports are declared.
-- [ ] `npm pack` contains the intended files and no secrets/databases.
+- [x] All runtime imports are declared.
+- [x] `npm pack` contains the intended files and no secrets/databases.
 - [ ] Definition of Done from SPEC §20 is fully checked.
 
 **Suggested commits:** `chore: finalize package metadata` → `docs: add install and usage guide` → `test: clean install smoke test` → `chore: release v0.1.0`.
