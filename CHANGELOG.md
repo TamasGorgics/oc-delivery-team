@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.6
+
+- Raise the docs agent step budget from 20 to 40.
+- Require the docs agent to create `docs.md` before deep exploration and write documentation files directly.
+- Prohibit deterministic scripts and patch generators as scribe substitutes for artifacts.
+- Add prompt and role-budget regression coverage.
+
 ## 0.1.5
 
 - Allow root-scoped artifact roles to write both the absolute `<root>/**` pattern and the project-relative `<root>/**` pattern.

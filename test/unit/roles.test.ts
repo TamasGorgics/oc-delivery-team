@@ -23,7 +23,7 @@ describe("role definitions", () => {
     expect(ROLE_BY_ID.tester).toMatchObject({ tier: "coding", maxSteps: 50, writeScope: "tests" });
     expect(ROLE_BY_ID.qa).toMatchObject({ tier: "coding", maxSteps: 30, readOnly: false });
     expect(ROLE_BY_ID.adversary).toMatchObject({ tier: "reasoning", maxSteps: 40 });
-    expect(ROLE_BY_ID.docs).toMatchObject({ tier: "fast", maxSteps: 20, writeScope: "docs" });
+    expect(ROLE_BY_ID.docs).toMatchObject({ tier: "fast", maxSteps: 40, writeScope: "docs" });
     expect(ROLE_BY_ID.retro).toMatchObject({ tier: "reasoning", maxSteps: 20, writeScope: "root" });
     expect(ROLE_IDS.every((id) => ROLE_BY_ID[id].promptId === id)).toBe(true);
     expect(ROLE_IDS.every((id) => ROLE_BY_ID[id].toolNeeds.length > 0)).toBe(true);

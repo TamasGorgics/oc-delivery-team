@@ -38,6 +38,8 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS.qa).toContain("VERDICT: PASS");
     expect(DEFAULT_PROMPTS.adversary).toContain("BLOCKERS: 0");
     expect(DEFAULT_PROMPTS.docs).toContain("docs.md");
+    expect(DEFAULT_PROMPTS.docs).toContain("Create it early");
+    expect(DEFAULT_PROMPTS.docs).toContain("Do not generate a patch through a script");
     expect(DEFAULT_PROMPTS.retro).toContain("retro.md");
     expect(DEFAULT_PROMPTS.retro).toContain("team_lesson_propose");
     expect(DEFAULT_PROMPTS.retro).toContain("proposals/<role>.<timestamp>.md");
@@ -48,7 +50,7 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("exact `artifact_dir`");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("never ask a different role to persist another role's artifact");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("If a subagent reaches its step limit");
-    expect(DEFAULT_PROMPTS["team-lead"]).toContain("do not use another role as a scribe");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("a deterministic script, or a patch generator as a scribe");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("spec and plan -> spec");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("built-in read-only plan agent");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("The plan phase is verification-only");

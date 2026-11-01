@@ -176,7 +176,7 @@ export const ROLES: readonly RoleDefinition[] = [
     description: "Updates user-facing documentation to match the delivered behavior.",
     mode: "subagent",
     tier: "fast",
-    maxSteps: 20,
+    maxSteps: 40,
     artifacts: ["docs.md"],
     promptId: "docs",
     readOnly: false,
