@@ -220,6 +220,25 @@ Keep `.team/prompts/` and `.team/lessons-export/` tracked if you want approved p
 
 This repository can be loaded directly during development through `.opencode/plugins/delivery-team/index.ts`. The installed package uses the same `src/index.ts` entry through its `exports` field.
 
+### Developing the plugin with itself
+
+Yes, you can use the plugin to develop the plugin. OpenCode in this checkout already loads the local source through `.opencode/plugins/delivery-team/index.ts`; do not configure the published `github:...#v0.1.0` package for self-development, or you will run the released code instead of your working tree.
+
+1. Start with a clean branch and run `/team` from this repository.
+2. Let the lead drive the normal phase gates. Source edits are blocked before `implement`; the developer and tester edit and run the project's Stack Profile commands.
+3. Use the source CLI while developing, not the globally installed release:
+
+   ```sh
+   bun run team runs
+   bun run team report <run-id>
+   bun run team lessons --status proposed
+   ```
+
+4. Restart OpenCode after changing plugin source files or approving a prompt. The running plugin is loaded in memory and does not hot-reload its own TypeScript changes.
+5. Keep the working tree clean between runs and run `bun run typecheck && bun test` before merging changes.
+
+Self-development uses the same `.team/` data root as other runs in this checkout. Run artifacts and the SQLite database are local state; approved prompts and lesson exports are the files intended for version control.
+
 ## Limitations
 
 - No dashboard, OpenTelemetry exporter, or automatic prompt/lesson approval.
