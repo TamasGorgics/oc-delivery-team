@@ -4,8 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import deliveryTeam, { getDeliveryTeamSnapshot } from "../../src/index";
 import { runTeamCli } from "../../src/cli/team";
-import { getDefaultPrompt } from "../../src/prompts";
-import { withCodeModeGuidance } from "../../src/prompts/code-mode";
+import { getDefaultPrompt, withRuntimeGuidance } from "../../src/prompts";
 import { promptProposalSha } from "../../src/prompts/proposals";
 import { ROLE_IDS } from "../../src/roles";
 import { openDatabase } from "../../src/state/db";
@@ -137,7 +136,7 @@ describe("delivery-team plugin registration", () => {
     const fake = createFakeContext({ projectDirectory });
     const cleanup = await deliveryTeam.setup(fake.context);
     assertCleanup(cleanup);
-    expect(fake.state.agents.get("team-lead")?.system).toBe(withCodeModeGuidance(approvedText));
+    expect(fake.state.agents.get("team-lead")?.system).toBe(withRuntimeGuidance(approvedText));
 
     writeFileSync(promptPath, "Unregistered prompt edit.", "utf8");
     fake.replayAgentTransforms();
@@ -156,7 +155,7 @@ describe("delivery-team plugin registration", () => {
     });
     expect(code).toBe(0);
     fake.replayAgentTransforms();
-    expect(fake.state.agents.get("team-lead")?.system).toBe(withCodeModeGuidance("Updated approved prompt."));
+    expect(fake.state.agents.get("team-lead")?.system).toBe(withRuntimeGuidance("Updated approved prompt."));
     await cleanup();
   });
 

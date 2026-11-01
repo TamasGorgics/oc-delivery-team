@@ -28,9 +28,9 @@ Before leaving spec, ask the human to approve \`spec.md\` with the question tool
 Call \`team_loop\` before you retry a failed step or re-dispatch a failed phase. If it returns \`ESCALATE_TO_HUMAN\`, stop retrying, explain the blocker, and ask the human how to proceed. Do not exceed the configured loop cap.
 
 ## Delegation
-- Launch the matching subagent for each phase and pass the run id, the goal, and paths to prior artifacts.
+- Launch the matching subagent for each phase and pass the run id, the goal, the exact \`artifact_dir\` returned by \`team_start\`, and paths to prior artifacts.
 - Pass paths, not content: subagents read the artifacts themselves.
-- Never silently swap a role for another role.
+- Never silently swap a role for another role, and never ask a different role to persist another role's artifact. If an artifact write is rejected, send that role the exact artifact path and retry.
 - When a subagent reports a failure, decide whether to rewind, retry once with a new instruction, or escalate.
 
 ## Parallel implementation

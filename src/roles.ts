@@ -82,7 +82,16 @@ export const ROLES: readonly RoleDefinition[] = [
     writesSource: false,
     writeScope: "root",
     shell: "deny",
-    toolNeeds: [...COMMON_TOOLS, "webfetch", "websearch", "team_stack", "team_stack_update"],
+    toolNeeds: [
+      ...COMMON_TOOLS,
+      "edit",
+      "write",
+      "patch",
+      "webfetch",
+      "websearch",
+      "team_stack",
+      "team_stack_update",
+    ],
   },
   {
     id: "spec",
@@ -97,7 +106,7 @@ export const ROLES: readonly RoleDefinition[] = [
     writesSource: false,
     writeScope: "root",
     shell: "deny",
-    toolNeeds: [...COMMON_TOOLS, "team_stack"],
+    toolNeeds: [...COMMON_TOOLS, "edit", "write", "patch", "team_stack"],
   },
   {
     id: "developer",
@@ -142,7 +151,7 @@ export const ROLES: readonly RoleDefinition[] = [
     writesSource: false,
     writeScope: "root",
     shell: "allow",
-    toolNeeds: [...COMMON_TOOLS, "shell", "team_stack"],
+    toolNeeds: [...COMMON_TOOLS, "edit", "write", "patch", "shell", "team_stack"],
   },
   {
     id: "adversary",
@@ -157,7 +166,7 @@ export const ROLES: readonly RoleDefinition[] = [
     writesSource: false,
     writeScope: "root",
     shell: "allow",
-    toolNeeds: [...COMMON_TOOLS, "shell", "team_stack"],
+    toolNeeds: [...COMMON_TOOLS, "edit", "write", "patch", "shell", "team_stack"],
   },
   {
     id: "docs",
@@ -187,7 +196,14 @@ export const ROLES: readonly RoleDefinition[] = [
     writesSource: false,
     writeScope: "root",
     shell: "deny",
-    toolNeeds: [...COMMON_TOOLS, "team_stack", "team_lesson_propose"],
+    toolNeeds: [
+      ...COMMON_TOOLS,
+      "edit",
+      "write",
+      "patch",
+      "team_stack",
+      "team_lesson_propose",
+    ],
   },
 ];
 

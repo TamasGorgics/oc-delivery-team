@@ -2,8 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { RoleId } from "../roles";
 import type { PromptRepository } from "../state/prompts";
-import { withCodeModeGuidance } from "./code-mode";
-import { getDefaultPrompt } from "./index";
+import { getDefaultPrompt, withRuntimeGuidance } from "./index";
 import { promptProposalSha } from "./proposals";
 
 export interface EffectivePrompt {
@@ -31,7 +30,7 @@ export function resolveRolePrompt(
     const sha = promptProposalSha(raw);
     const approved = prompts.list({ role, status: "approved" }).some((version) => version.sha === sha);
     return approved
-      ? { role, text: withCodeModeGuidance(text), raw, sha, source: "approved" }
+      ? { role, text: withRuntimeGuidance(text), raw, sha, source: "approved" }
       : fallback;
   } catch {
     return fallback;

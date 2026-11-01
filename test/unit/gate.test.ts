@@ -360,6 +360,22 @@ describe("edit phase gate", () => {
     expect(() => handler(event("write", { path: "README.md" }))).not.toThrow();
   });
 
+  test("requires artifact roles to write inside the run artifact directory", async () => {
+    const harness = await createGateHarness();
+    const run = startRun(harness);
+    const handler = createGateHandler(harness.runtime);
+
+    const bare = denial(() => handler(event("write", { path: "brainstorm.md" }, { agent: "researcher" })));
+    expect(bare.code).toBe("edit_phase_blocked");
+    expect(bare.message).toContain("brainstorm.md");
+
+    expect(() => handler(event(
+      "write",
+      { path: path.join(harness.rootDir, "runs", run.id, "brainstorm.md") },
+      { agent: "researcher" },
+    ))).not.toThrow();
+  });
+
   test("checks every path in a multi-file patch including move destinations", async () => {
     const harness = await createGateHarness();
     const run = startRun(harness);

@@ -29,8 +29,7 @@ import { redactSecrets, redactText } from "../state/privacy";
 import { renderRunReport } from "../state/report";
 import { listTeamWorktrees } from "../state/worktrees";
 import { StackService } from "../stack/service";
-import { getDefaultPrompt } from "../prompts";
-import { withCodeModeGuidance } from "../prompts/code-mode";
+import { getDefaultPrompt, withRuntimeGuidance } from "../prompts";
 import { promptProposalSha, scanPromptProposals } from "../prompts/proposals";
 import { promptProposalPathFromArgument, renderPromptDiff } from "./prompts";
 import {
@@ -941,7 +940,7 @@ function readCurrentPrompt(rootDir: string, role: RoleId): { readonly text: stri
   }
   const text = readFileSync(currentPath, "utf8").trim();
   return text
-    ? { text: withCodeModeGuidance(text), label: `prompts/${role}.md` }
+    ? { text: withRuntimeGuidance(text), label: `prompts/${role}.md` }
     : { text: fallback, label: `built-in:${role}` };
 }
 

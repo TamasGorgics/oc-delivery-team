@@ -8,6 +8,7 @@ import spec from "./spec";
 import teamLead from "./team-lead";
 import tester from "./tester";
 import type { RoleId } from "../roles";
+import { withArtifactPathGuidance } from "./artifact-path";
 import { withCodeModeGuidance } from "./code-mode";
 
 export const DEFAULT_PROMPTS: Readonly<Record<RoleId, string>> = {
@@ -22,6 +23,10 @@ export const DEFAULT_PROMPTS: Readonly<Record<RoleId, string>> = {
   retro,
 };
 
+export function withRuntimeGuidance(prompt: string): string {
+  return withArtifactPathGuidance(withCodeModeGuidance(prompt));
+}
+
 export function getDefaultPrompt(role: RoleId): string {
-  return withCodeModeGuidance(DEFAULT_PROMPTS[role]);
+  return withRuntimeGuidance(DEFAULT_PROMPTS[role]);
 }

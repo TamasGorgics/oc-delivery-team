@@ -4,8 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { runTeamCli } from "../../src/cli/team";
 import deliveryTeam from "../../src/index";
-import { getDefaultPrompt } from "../../src/prompts";
-import { withCodeModeGuidance } from "../../src/prompts/code-mode";
+import { getDefaultPrompt, withRuntimeGuidance } from "../../src/prompts";
 import { promptProposalSha } from "../../src/prompts/proposals";
 import { openDatabase } from "../../src/state/db";
 import { PromptRepository } from "../../src/state/prompts";
@@ -184,7 +183,7 @@ describe("team prompts CLI", () => {
     const restartedCleanup = await deliveryTeam.setup(restarted.context);
     requireCleanup(restartedCleanup);
     try {
-      expect(restarted.state.agents.get("developer")?.system).toBe(withCodeModeGuidance(proposalText));
+      expect(restarted.state.agents.get("developer")?.system).toBe(withRuntimeGuidance(proposalText));
     } finally {
       await restartedCleanup();
     }

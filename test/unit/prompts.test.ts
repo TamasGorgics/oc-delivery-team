@@ -43,14 +43,18 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("brainstorm -> spec -> plan -> implement -> test -> qa -> adversary -> docs -> retro -> done");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("ask the human");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("team_worktree");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("exact `artifact_dir`");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("never ask a different role to persist another role's artifact");
     expect(DEFAULT_PROMPTS.developer).toContain("unique short name");
   });
 
-  test("adds Code Mode guidance to every effective prompt", () => {
+  test("adds Code Mode and artifact-path guidance to every effective prompt", () => {
     for (const role of ROLE_IDS) {
       expect(getDefaultPrompt(role)).toContain("## Code Mode runtime");
       expect(getDefaultPrompt(role)).toContain("tools.team_*");
       expect(getDefaultPrompt(role)).toContain("Do not use `import()`");
+      expect(getDefaultPrompt(role)).toContain("## Artifact paths");
+      expect(getDefaultPrompt(role)).toContain("<artifact_dir>/brainstorm.md");
     }
   });
 

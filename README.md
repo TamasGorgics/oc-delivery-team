@@ -92,6 +92,17 @@ Bun must be installed and available on `PATH` because the package entry and CLI 
 
 The first command writes a database at `.team/team.db`. Use `--root <dir>` to select a different data root or `--db <file>` to override the database path.
 
+## Artifact paths
+
+`team_start` returns the run's exact `artifact_dir`. The lead must pass that directory to every subagent. Artifact-writing roles write fully qualified paths such as:
+
+```text
+<artifact_dir>/brainstorm.md
+<artifact_dir>/spec.md
+```
+
+A bare `brainstorm.md` in the project root is outside the run directory and is blocked by the gate. If a role cannot write its artifact, pass it the exact path and retry; do not use another role to persist it.
+
 ## Configuration
 
 Plugin options are passed under the `options` object in `opencode.json`:

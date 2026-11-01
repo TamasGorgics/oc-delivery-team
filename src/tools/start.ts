@@ -102,6 +102,7 @@ export function createStartTool(runtime: ToolRuntime) {
         [
           `Started run ${runId} in brainstorm.`,
           `Artifacts: ${artifactDir}`,
+          "Pass this exact artifact directory to every subagent; artifacts written outside it are blocked.",
           "Launch the researcher for brainstorm, then call team_advance when brainstorm.md exists.",
         ].join("\n"),
       );

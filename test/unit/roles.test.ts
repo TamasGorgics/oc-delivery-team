@@ -28,6 +28,12 @@ describe("role definitions", () => {
     expect(ROLE_IDS.every((id) => ROLE_BY_ID[id].toolNeeds.length > 0)).toBe(true);
   });
 
+  test("gives every artifact-writing role a write-capable toolset", () => {
+    for (const role of ["researcher", "spec", "developer", "tester", "qa", "adversary", "docs", "retro"] as const) {
+      expect(ROLE_BY_ID[role].toolNeeds).toEqual(expect.arrayContaining(["edit", "write", "patch"]));
+    }
+  });
+
   test("omits disabled roles without mutating the role table", () => {
     expect(enabledRoles(["docs", "qa"]).map((role) => role.id)).toHaveLength(7);
     expect(enabledRoles().map((role) => role.id)).toEqual([...ROLE_IDS]);
