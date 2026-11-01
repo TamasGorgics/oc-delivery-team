@@ -1,5 +1,7 @@
 # OpenCode Delivery Team
 
+[![CI](https://github.com/TamasGorgics/oc-delivery-team/actions/workflows/ci.yml/badge.svg)](https://github.com/TamasGorgics/oc-delivery-team/actions/workflows/ci.yml)
+
 A software delivery team for OpenCode V2. One plugin registers nine role agents, phase-gated tools and hooks, a human CLI, a learning loop, optional Git worktrees, and a fixture-based eval harness.
 
 The plugin is deliberately stack-agnostic. Project-specific build, test, lint, and run commands come from the Stack Profile, not from hardcoded language assumptions.

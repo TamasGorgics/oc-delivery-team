@@ -14,7 +14,7 @@ git diff --check
 git status --short
 ```
 
-The full test suite includes the prompt-neutrality lint, gate, state, migration, learning-loop, worktree, and eval coverage. The working tree must be clean before tagging.
+The full test suite includes the prompt-neutrality lint, gate, state, migration, learning-loop, worktree, and eval coverage. The working tree must be clean before tagging. The `.github/workflows/ci.yml` workflow runs the same checks on pushes and pull requests; it must be green before release.
 
 ## 2. Package manifest
 
