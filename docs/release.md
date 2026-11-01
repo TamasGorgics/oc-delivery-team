@@ -29,7 +29,7 @@ Confirm the tarball contains only:
 - `evals/`
 - `docs/`
 
-Confirm it does not contain `test/`, `.opencode/`, `.team/`, `node_modules/`, `SPEC.md`, `ROADMAP.md`, or `bun.lock`. Confirm no database, secret, or local configuration file is present.
+Confirm it does not contain `test/`, `.opencode/`, `.team/`, `node_modules/`, `docs/SPEC.md`, `docs/ROADMAP.md`, or `bun.lock`. Confirm no database, secret, or local configuration file is present.
 
 ## 3. Clean-install smoke test
 

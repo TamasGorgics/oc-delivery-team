@@ -258,4 +258,4 @@ bun test
 npm pack --dry-run --json --ignore-scripts
 ```
 
-See [docs/architecture.md](docs/architecture.md) for the design and [docs/release.md](docs/release.md) for the release checklist.
+See [docs/architecture.md](docs/architecture.md) for the design, [docs/SPEC.md](docs/SPEC.md) for the source specification, [docs/ROADMAP.md](docs/ROADMAP.md) for the delivery roadmap, and [docs/release.md](docs/release.md) for the release checklist.

@@ -19,7 +19,14 @@ describe("package metadata and tarball", () => {
     expect(packageJson.exports?.["."]?.import).toBe("./src/index.ts");
     expect(packageJson.exports?.["."]?.types).toBe("./src/index.ts");
     expect(packageJson.bin?.team).toBe("./src/cli/team.ts");
-    expect(packageJson.files).toEqual(expect.arrayContaining(["src", "evals", "docs", "CHANGELOG.md"]));
+    expect(packageJson.files).toEqual(expect.arrayContaining([
+      "src",
+      "evals",
+      "docs/api-notes.md",
+      "docs/architecture.md",
+      "docs/release.md",
+      "CHANGELOG.md",
+    ]));
   });
 
   test("npm pack excludes tests, local state, and development-only files", () => {
@@ -45,7 +52,17 @@ describe("package metadata and tarball", () => {
       "docs/release.md",
       "docs/api-notes.md",
     ]));
-    for (const excluded of ["test", ".opencode", ".team", "node_modules", "SPEC.md", "ROADMAP.md", "bun.lock"]) {
+    for (const excluded of [
+      "test",
+      ".opencode",
+      ".team",
+      "node_modules",
+      "SPEC.md",
+      "ROADMAP.md",
+      "docs/SPEC.md",
+      "docs/ROADMAP.md",
+      "bun.lock",
+    ]) {
       expect(files.some((file) => file === excluded || file.startsWith(`${excluded}/`))).toBe(false);
     }
   });

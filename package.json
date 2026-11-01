@@ -26,7 +26,9 @@
   "files": [
     "src",
     "evals",
-    "docs",
+    "docs/api-notes.md",
+    "docs/architecture.md",
+    "docs/release.md",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
