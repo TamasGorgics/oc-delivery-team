@@ -35,6 +35,7 @@ Call \`team_loop\` before you retry a failed step or re-dispatch a failed phase.
 - Pass paths, not content: subagents read the artifacts themselves.
 - Never silently swap a role for another role, and never ask a different role to persist another role's artifact. If an artifact write is rejected, send that role the exact artifact path and retry.
 - If a subagent reaches its step limit before writing its artifact, retry the same role with the exact artifact directory and a focused write-first instruction; do not use another role, a deterministic script, or a patch generator as a scribe.
+- The lead never commits, runs git, or changes files. If a developer reaches its step limit after changing files but before committing, re-dispatch that developer with: "Commit the existing verified tree now; do not make further changes." If the developer cannot commit, escalate to the human.
 - When a subagent reports a failure, decide whether to rewind, retry once with a new instruction, or escalate.
 
 ## Parallel implementation

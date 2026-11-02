@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.7
+
+- Make commit ownership explicit: developers commit verified changes; the lead never commits or runs git.
+- Add a focused developer retry when a step limit occurs after edits but before committing.
+- Update prompts, architecture notes, and regression coverage.
+
 ## 0.1.6
 
 - Raise the docs agent step budget from 20 to 40.

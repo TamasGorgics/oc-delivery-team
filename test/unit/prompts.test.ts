@@ -51,12 +51,17 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("never ask a different role to persist another role's artifact");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("If a subagent reaches its step limit");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("a deterministic script, or a patch generator as a scribe");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("The lead never commits");
+    expect(DEFAULT_PROMPTS["team-lead"]).toContain("Commit the existing verified tree now");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("spec and plan -> spec");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("built-in read-only plan agent");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("The plan phase is verification-only");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("never compile a draft");
     expect(DEFAULT_PROMPTS.spec).toContain("You own both the spec and plan phases");
     expect(DEFAULT_PROMPTS.developer).toContain("unique short name");
+    expect(DEFAULT_PROMPTS.developer).toContain("For a sequential task in the main checkout");
+    expect(DEFAULT_PROMPTS.developer).toContain("never leave verified work uncommitted");
+    expect(DEFAULT_PROMPTS.developer).toContain("or ask the lead to commit");
   });
 
   test("adds Code Mode and artifact-path guidance to every effective prompt", () => {

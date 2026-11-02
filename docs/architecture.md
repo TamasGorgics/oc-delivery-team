@@ -47,7 +47,7 @@ The spec subagent owns both `spec.md` and `plan.md`. The `plan` phase is verific
 
 ## Agents and prompts
 
-Each role has one responsibility, a default prompt, a model tier, a write scope, and a shell policy. Agents are registered through `agent.transform`; prompts are resolved from:
+Each role has one responsibility, a default prompt, a model tier, a write scope, and a shell policy. Developers commit their verified changes; the read-only lead never commits, runs git, or edits files. Agents are registered through `agent.transform`; prompts are resolved from:
 
 1. an approved `.team/prompts/<role>.md` override whose SHA matches an approved `prompt_versions` row, or
 2. the built-in prompt in `src/prompts/`.
