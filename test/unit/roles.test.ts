@@ -17,14 +17,14 @@ describe("role definitions", () => {
     ]);
     expect(ROLE_BY_ID["team-lead"].mode).toBe("primary");
     expect(ROLE_BY_ID["team-lead"].maxSteps).toBeUndefined();
-    expect(ROLE_BY_ID.researcher).toMatchObject({ tier: "fast", maxSteps: 25, artifacts: ["brainstorm.md"] });
+    expect(ROLE_BY_ID.researcher).toMatchObject({ tier: "fast", maxSteps: 40, artifacts: ["brainstorm.md"] });
     expect(ROLE_BY_ID.spec).toMatchObject({ tier: "reasoning", maxSteps: 40, artifacts: ["spec.md", "plan.md"] });
     expect(ROLE_BY_ID.developer).toMatchObject({ tier: "coding", maxSteps: 80, writesSource: true });
     expect(ROLE_BY_ID.tester).toMatchObject({ tier: "coding", maxSteps: 50, writeScope: "tests" });
-    expect(ROLE_BY_ID.qa).toMatchObject({ tier: "coding", maxSteps: 30, readOnly: false });
-    expect(ROLE_BY_ID.adversary).toMatchObject({ tier: "reasoning", maxSteps: 40 });
+    expect(ROLE_BY_ID.qa).toMatchObject({ tier: "coding", maxSteps: 40, readOnly: false });
+    expect(ROLE_BY_ID.adversary).toMatchObject({ tier: "reasoning", maxSteps: 60 });
     expect(ROLE_BY_ID.docs).toMatchObject({ tier: "fast", maxSteps: 40, writeScope: "docs" });
-    expect(ROLE_BY_ID.retro).toMatchObject({ tier: "reasoning", maxSteps: 20, writeScope: "root" });
+    expect(ROLE_BY_ID.retro).toMatchObject({ tier: "reasoning", maxSteps: 40, writeScope: "root" });
     expect(ROLE_IDS.every((id) => ROLE_BY_ID[id].promptId === id)).toBe(true);
     expect(ROLE_IDS.every((id) => ROLE_BY_ID[id].toolNeeds.length > 0)).toBe(true);
   });

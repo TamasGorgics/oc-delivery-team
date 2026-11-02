@@ -71,6 +71,7 @@ describe("built-in role prompts", () => {
       expect(getDefaultPrompt(role)).toContain("Do not use `import()`");
       expect(getDefaultPrompt(role)).toContain("## Artifact paths");
       expect(getDefaultPrompt(role)).toContain("<artifact_dir>/brainstorm.md");
+      expect(getDefaultPrompt(role)).toContain("Create the required artifact early");
     }
   });
 

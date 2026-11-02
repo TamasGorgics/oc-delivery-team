@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8
+
+- Require every role to create its artifact early, before deep exploration.
+- Increase review-role budgets: researcher and QA to 40, adversary to 60, retro to 40.
+- Reduce repeated step-limit failures before artifact persistence.
+
 ## 0.1.7
 
 - Make commit ownership explicit: developers commit verified changes; the lead never commits or runs git.
