@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_PROMPTS, getDefaultPrompt } from "../../src/prompts";
+import {
+  REVIEW_WAVE_GUIDANCE,
+  REVIEW_WAVE_HEADING,
+  withReviewWaveGuidance,
+} from "../../src/prompts/review-wave";
 import { ROLE_IDS } from "../../src/roles";
 
 const STACK_DENYLIST = [
@@ -73,6 +78,43 @@ describe("built-in role prompts", () => {
       expect(getDefaultPrompt(role)).toContain("<artifact_dir>/brainstorm.md");
       expect(getDefaultPrompt(role)).toContain("Create the required artifact early");
     }
+  });
+
+  test("adds parallel review wave guidance only when enabled for the four wave roles", () => {
+    const waveRoles = ["team-lead", "qa", "adversary", "docs"] as const;
+    for (const prompt of Object.values(DEFAULT_PROMPTS)) {
+      expect(prompt).not.toContain(REVIEW_WAVE_HEADING);
+    }
+    for (const role of ROLE_IDS) {
+      expect(getDefaultPrompt(role, { reviewWave: false })).toBe(getDefaultPrompt(role));
+      expect(getDefaultPrompt(role)).not.toContain(REVIEW_WAVE_HEADING);
+    }
+    for (const role of waveRoles) {
+      const enabled = getDefaultPrompt(role, { reviewWave: true });
+      expect(enabled).toBe(`${getDefaultPrompt(role)}\n\n${REVIEW_WAVE_HEADING}\n${REVIEW_WAVE_GUIDANCE[role]!}`);
+      expect(enabled).toContain(REVIEW_WAVE_HEADING);
+      expect(withReviewWaveGuidance(enabled, role, true)).toBe(enabled);
+      expect(withReviewWaveGuidance(enabled, role, false)).toBe(enabled);
+    }
+    for (const role of ROLE_IDS.filter((id) => !(waveRoles as readonly string[]).includes(id))) {
+      expect(getDefaultPrompt(role, { reviewWave: true })).toBe(getDefaultPrompt(role));
+    }
+
+    expect(getDefaultPrompt("team-lead", { reviewWave: true })).toContain("same turn");
+    expect(getDefaultPrompt("team-lead", { reviewWave: true })).toContain("review_wave.ready");
+    expect(getDefaultPrompt("team-lead", { reviewWave: true })).toContain("qa -> docs");
+    expect(getDefaultPrompt("team-lead", { reviewWave: true })).toContain("never rewind to `adversary`");
+    expect(getDefaultPrompt("qa", { reviewWave: true })).toContain("You own only `qa.md`");
+    expect(getDefaultPrompt("adversary", { reviewWave: true })).toContain("BLOCKERS: 0");
+    expect(getDefaultPrompt("docs", { reviewWave: true })).toContain("after the review barrier passes");
+  });
+
+  test("keeps enabled wave guidance stack-neutral and free of model ids", () => {
+    const enabledText = (["team-lead", "qa", "adversary", "docs"] as const)
+      .map((role) => getDefaultPrompt(role, { reviewWave: true }))
+      .join("\n");
+    for (const pattern of STACK_DENYLIST) expect(enabledText).not.toMatch(pattern);
+    expect(enabledText).not.toMatch(/\b(?:gpt|claude|gemini|deepseek|llama|mistral)\b/i);
   });
 
   test("contains no unlabeled stack-specific command examples", () => {

@@ -298,7 +298,9 @@ function applyRoleDraft(
   draft.description = role.description;
   draft.mode = role.mode;
   draft.hidden = false;
-  draft.system = resolvePrompt(config.rootDir, role.id, prompts);
+  draft.system = resolvePrompt(config.rootDir, role.id, prompts, {
+    reviewWave: config.reviews.parallel,
+  });
   draft.steps = route?.steps;
   if (route?.steps === undefined) delete draft.steps;
   setAgentModel(draft, route?.model ?? null);
@@ -307,8 +309,13 @@ function applyRoleDraft(
   draft.permissions = mergeRolePermissions(draft.permissions, roleRules);
 }
 
-function resolvePrompt(rootDir: string, role: RoleId, prompts: PromptRepository | null): string {
-  return resolveRolePrompt(rootDir, role, prompts).text;
+function resolvePrompt(
+  rootDir: string,
+  role: RoleId,
+  prompts: PromptRepository | null,
+  options?: { readonly reviewWave?: boolean },
+): string {
+  return resolveRolePrompt(rootDir, role, prompts, options).text;
 }
 
 function mergeRolePermissions(existing: AgentDraft["permissions"], additions: PermissionRule[]) {

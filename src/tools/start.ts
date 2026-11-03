@@ -1,5 +1,7 @@
 import { ensureRunDirectory } from "../state/paths";
 import { createRunId } from "../state/paths";
+import { reviewWaveStatus, serializeReviewWave } from "../state/reviews";
+import { emptyStackProfile } from "../stack/profile";
 import type { RunModelInput } from "../state/runs";
 import {
   defineTeamTool,
@@ -91,6 +93,16 @@ export function createStartTool(runtime: ToolRuntime) {
         );
       }
 
+      const createdRun = services.runs.getRun(runId);
+      if (!createdRun) throw new Error(`Run ${runId} could not be read back after creation.`);
+      const reviewWave = reviewWaveStatus({
+        enabled: runtime.config.reviews.parallel,
+        run: createdRun,
+        rootDir: runtime.config.rootDir,
+        profile: emptyStackProfile(),
+        transitions: services.runs.getTransitions(runId),
+      });
+
       return ok(
         {
           run: runId,
@@ -98,12 +110,18 @@ export function createStartTool(runtime: ToolRuntime) {
           phase: "brainstorm",
           artifact_dir: artifactDir,
           models: routes.length,
+          review_wave: serializeReviewWave(reviewWave),
         },
         [
           `Started run ${runId} in brainstorm.`,
           `Artifacts: ${artifactDir}`,
           "Pass this exact artifact directory to every subagent; artifacts written outside it are blocked.",
           "Launch the researcher for brainstorm, then call team_advance when brainstorm.md exists.",
+          ...(runtime.config.reviews.parallel
+            ? [
+                "Parallel review wave enabled: after test, dispatch qa and adversary together with this exact artifact directory; call team_advance qa -> docs only when review_wave.ready is true.",
+              ]
+            : []),
         ].join("\n"),
       );
     },

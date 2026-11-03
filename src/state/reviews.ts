@@ -144,6 +144,8 @@ export interface ReviewWaveStatusInput {
   readonly transitions: readonly PhaseTransitionRow[];
   /** Optional per-role loop detail from the repository; used by `team_status`. */
   readonly memberLoops?: Readonly<Partial<Record<ReviewRole, ReviewWaveMemberLoop>>>;
+  /** Optional precomputed barrier; avoids a second evaluation when callers already gate. */
+  readonly barrier?: ReviewBarrierResult;
 }
 
 function reviewEntries(transitions: readonly PhaseTransitionRow[]): PhaseTransitionRow[] {
@@ -177,9 +179,9 @@ export function reviewWaveStatus(input: ReviewWaveStatusInput): ReviewWaveStatus
     };
   }
 
-  const artifacts = artifactsFor(input.rootDir, input.run.id);
+  const artifacts = reviewArtifactPaths(input.rootDir, input.run.id);
   const barrier = active
-    ? evaluateReviewBarrier({
+    ? input.barrier ?? evaluateReviewBarrier({
         rootDir: input.rootDir,
         runId: input.run.id,
         profile: input.profile,
@@ -210,7 +212,11 @@ export function reviewWaveStatus(input: ReviewWaveStatusInput): ReviewWaveStatus
   };
 }
 
-function artifactsFor(rootDir: string, runId: string): Readonly<Record<ReviewRole, string>> {
+/** Shared absolute paths for both reviewer artifacts. */
+export function reviewArtifactPaths(
+  rootDir: string,
+  runId: string,
+): Readonly<Record<ReviewRole, string>> {
   return {
     qa: runArtifactPath(rootDir, runId, REVIEW_ARTIFACTS.qa),
     adversary: runArtifactPath(rootDir, runId, REVIEW_ARTIFACTS.adversary),

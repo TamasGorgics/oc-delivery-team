@@ -2,6 +2,13 @@ import { validatePhaseGate } from "../state/artifacts";
 import { nextPhase } from "../state/phases";
 import { writeRunReport } from "../state/report";
 import { PromptRepository } from "../state/prompts";
+import {
+  REVIEW_MEMBERS,
+  evaluateReviewBarrier,
+  reviewAdvanceTarget,
+  reviewArtifactPaths,
+  serializeGateResult,
+} from "../state/reviews";
 import { StackService } from "../stack/service";
 import { scanPromptProposals } from "../prompts/proposals";
 import {
@@ -47,12 +54,23 @@ export function createAdvanceTool(runtime: ToolRuntime) {
       if (run.status !== "open") {
         return failure(`Run ${run.id} is ${run.status}; only an open run can advance.`, "run_not_open");
       }
-      const target = nextPhase(run.phase);
+
+      const enabled = runtime.config.reviews.parallel;
+      const waveGate = enabled && run.phase === "qa";
+      const target = waveGate ? reviewAdvanceTarget(run.phase, true) : nextPhase(run.phase);
       if (!target) return failure(`Run ${run.id} has no next phase.`, "run_terminal");
 
       const profile = stackService(runtime).resolveForRun(run, false).profile;
       const notes = services.runs.listNotes(run.id);
-      const gate = validatePhaseGate({
+      const barrier = waveGate
+        ? evaluateReviewBarrier({
+            rootDir: runtime.config.rootDir,
+            runId: run.id,
+            profile,
+            notes,
+          })
+        : undefined;
+      const gate = barrier ?? validatePhaseGate({
         phase: run.phase,
         rootDir: runtime.config.rootDir,
         runId: run.id,
@@ -66,6 +84,31 @@ export function createAdvanceTool(runtime: ToolRuntime) {
           { phase: run.phase, code: gate.code, message: gate.message, artifact: gate.artifact },
           { runId: run.id, sessionId: identity.sessionId, agent: identity.agent, toolCallId: identity.toolCallId, phase: run.phase },
         );
+        if (barrier) {
+          const generation = services.runs.countPhaseEntries(run.id, "qa");
+          const failingMembers = barrier.members.filter((member) => !member.ok);
+          runtime.trace.event(
+            "review.wave.denied",
+            {
+              phase: "qa",
+              gate_code: gate.code,
+              failing_members: failingMembers.map((member) => ({
+                role: member.role,
+                code: member.code,
+                artifact: member.artifact,
+                artifact_path: member.artifact_path,
+                message: member.message,
+              })),
+              ready: false,
+              generation,
+            },
+            { runId: run.id, sessionId: identity.sessionId, agent: identity.agent, toolCallId: identity.toolCallId, phase: run.phase },
+          );
+          return failure(gate.message, "gate_denied", {
+            phase: run.phase,
+            gate: serializeGateResult(gate),
+          });
+        }
         return failure(gate.message, "gate_denied", {
           phase: run.phase,
           gate: {
@@ -81,6 +124,7 @@ export function createAdvanceTool(runtime: ToolRuntime) {
       const now = new Date().toISOString();
       const startedAt = services.runs.getPhaseStartedAt(run.id);
       const durationMs = startedAt ? Math.max(0, Date.parse(now) - Date.parse(startedAt)) : null;
+      const reviewGeneration = barrier ? services.runs.countPhaseEntries(run.id, "qa") : undefined;
 
       services.db.transaction(() => {
         services.runs.addTransition({
@@ -99,6 +143,41 @@ export function createAdvanceTool(runtime: ToolRuntime) {
         { from: run.phase, to: target, duration_ms: durationMs },
         { runId: run.id, sessionId: identity.sessionId, agent: identity.agent, toolCallId: identity.toolCallId, phase: target },
       );
+
+      if (barrier) {
+        runtime.trace.event(
+          "review.wave.completed",
+          {
+            phase: "qa",
+            to: target,
+            skipped: "adversary",
+            duration_ms: durationMs,
+            generation: reviewGeneration,
+            members: barrier.members.map((member) => ({
+              role: member.role,
+              artifact: member.artifact,
+              artifact_path: member.artifact_path,
+              ...(member.footer ? { footer: member.footer.values } : {}),
+            })),
+          },
+          { runId: run.id, sessionId: identity.sessionId, agent: identity.agent, toolCallId: identity.toolCallId, phase: "qa" },
+        );
+      }
+
+      if (enabled && run.phase === "test" && target === "qa") {
+        runtime.trace.event(
+          "review.wave.started",
+          {
+            phase: "qa",
+            members: [...REVIEW_MEMBERS],
+            artifacts: reviewArtifactPaths(runtime.config.rootDir, run.id),
+            cause: "advance",
+            generation: services.runs.countPhaseEntries(run.id, "qa"),
+            max_loops: runtime.config.maxLoops,
+          },
+          { runId: run.id, sessionId: identity.sessionId, agent: identity.agent, toolCallId: identity.toolCallId, phase: target },
+        );
+      }
 
       if (run.phase === "retro") {
         try {

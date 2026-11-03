@@ -1,6 +1,17 @@
 import { validatePhaseGate, type GateResult } from "../state/artifacts";
 import { PHASE_OWNERS } from "../state/phases";
-import { parseJsonRecord, type RunRow, type ToolCallRow } from "../state/runs";
+import {
+  REVIEW_MEMBERS,
+  evaluateReviewBarrier,
+  reviewWaveStatus,
+  serializeGateResult,
+  serializeReviewWave,
+  type ReviewBarrierResult,
+  type ReviewRole,
+  type ReviewWaveMemberLoop,
+  type ReviewWaveStatus,
+} from "../state/reviews";
+import { parseJsonRecord, type LoopRow, type RunRow, type ToolCallRow } from "../state/runs";
 import { StackService } from "../stack/service";
 import {
   defineTeamTool,
@@ -47,6 +58,7 @@ export function createStatusTool(runtime: ToolRuntime) {
       const events = services.runs.listRecentEvents(run.id, 10);
       const recentToolCalls = services.runs.listRecentToolCalls(run.id, 10);
       const messageTotals = services.runs.messageTotals(run.id);
+      const maxLoops = runtime.config.maxLoops;
       const counters = {
         tool_calls: services.runs.countToolCalls(run.id),
         tool_failures: services.runs.countToolFailures(run.id),
@@ -59,19 +71,41 @@ export function createStatusTool(runtime: ToolRuntime) {
         cost: messageTotals.cost,
       };
       const profile = stackService(runtime).resolveForRun(run, false).profile;
-      const gate = validatePhaseGate({
+      const enabled = runtime.config.reviews.parallel;
+      const barrier = enabled && run.status === "open" && run.phase === "qa"
+        ? evaluateReviewBarrier({
+            rootDir: runtime.config.rootDir,
+            runId: run.id,
+            profile,
+            notes,
+          })
+        : undefined;
+      const gate = barrier ?? validatePhaseGate({
         phase: run.phase,
         rootDir: runtime.config.rootDir,
         runId: run.id,
         profile,
         notes,
       });
+      const memberLoops = reviewMemberLoops(loops, maxLoops);
+      const reviewWave = reviewWaveStatus({
+        enabled,
+        run,
+        rootDir: runtime.config.rootDir,
+        profile,
+        notes,
+        transitions,
+        memberLoops,
+        ...(barrier ? { barrier } : {}),
+      });
       const modelWarnings = events
         .filter((event) => event.kind.startsWith("model."))
         .map((event) => ({ kind: event.kind, data: parseJsonRecord(event.data_json) }));
-      const loopSummary = loopCounts(loops);
+      const loopSummary = loopCounts(loops.filter((loop) => loop.role === ""));
+      const roleLoops = roleLoopSummary(loops, maxLoops);
       const owner = PHASE_OWNERS[run.phase];
-      const nextAction = nextActionFor(run, gate, owner);
+      const nextAction = nextActionFor(run, gate, owner, barrier);
+      const waveLine = enabled ? renderWaveLine(reviewWave) : undefined;
 
       return ok(
         {
@@ -80,12 +114,14 @@ export function createStatusTool(runtime: ToolRuntime) {
           status: run.status,
           phase: run.phase,
           owner,
-          gate: gatePayload(gate),
+          gate: serializeGateResult(gate),
           loops: loopSummary,
+          ...(roleLoops.length > 0 ? { role_loops: roleLoops } : {}),
           counters,
           notes: notes.length,
           open_lessons: services.lessons.countOpen(),
           models: { warnings: modelWarnings },
+          review_wave: serializeReviewWave(reviewWave),
           recent_events: events.map((event) => ({
             kind: event.kind,
             at: event.at,
@@ -94,7 +130,7 @@ export function createStatusTool(runtime: ToolRuntime) {
           recent_tool_calls: recentToolCalls.map(toolCallPayload),
           next_action: nextAction,
         },
-        renderStatus(run, gate, owner, loopSummary, counters, notes.length, services.lessons.countOpen(), nextAction),
+        renderStatus(run, gate, owner, loopSummary, counters, notes.length, services.lessons.countOpen(), nextAction, waveLine),
       );
     },
   });
@@ -109,29 +145,83 @@ function stackService(runtime: ToolRuntime): StackService {
   });
 }
 
-function gatePayload(gate: GateResult): Record<string, unknown> {
-  return {
-    ok: gate.ok,
-    code: gate.code,
-    message: gate.message,
-    artifact: gate.artifact,
-    artifact_path: gate.artifactPath,
-    ...(gate.footer ? { footer: gate.footer.values } : {}),
-  };
-}
-
-function loopCounts(loops: readonly { readonly phase: string; readonly count: number }[]): Record<string, number> {
+function loopCounts(loops: readonly LoopRow[]): Record<string, number> {
   return Object.fromEntries(loops.map((loop) => [loop.phase, Number(loop.count)]));
 }
 
-function nextActionFor(run: RunRow, gate: GateResult, owner: string | null): string {
+function roleLoopSummary(loops: readonly LoopRow[], maxLoops: number): Array<Record<string, unknown>> {
+  return loops
+    .filter((loop) => loop.role !== "")
+    .map((loop) => {
+      const count = Number(loop.count);
+      return {
+        phase: loop.phase,
+        role: loop.role,
+        count,
+        remaining: Math.max(0, maxLoops - count),
+        escalated: count > maxLoops,
+      };
+    });
+}
+
+function reviewMemberLoops(
+  loops: readonly LoopRow[],
+  maxLoops: number,
+): Readonly<Partial<Record<ReviewRole, ReviewWaveMemberLoop>>> {
+  return Object.fromEntries(
+    REVIEW_MEMBERS.map((role) => {
+      const row = loops.find((loop) => loop.phase === "qa" && loop.role === role);
+      const count = row ? Number(row.count) : 0;
+      return [role, {
+        count,
+        remaining: Math.max(0, maxLoops - count),
+        escalated: count > maxLoops,
+      }];
+    }),
+  );
+}
+
+function nextActionFor(
+  run: RunRow,
+  gate: GateResult,
+  owner: string | null,
+  barrier?: ReviewBarrierResult,
+): string {
   if (run.status !== "open") return "The run is not open; inspect the status or start a new run.";
   if (run.phase === "done") return "The run is done and terminal.";
+  if (barrier) {
+    if (barrier.ok) {
+      return "Review wave ready: both qa.md and adversary.md passed. Call team_advance to move qa -> docs.";
+    }
+    const failing = barrier.members
+      .filter((member) => !member.ok)
+      .map((member) => `${member.role} (${member.artifact})`)
+      .join(", ");
+    const retryRoles = barrier.members
+      .filter((member) => !member.ok)
+      .map((member) => `team_loop(role="${member.role}")`)
+      .join(" / ");
+    return `Review wave not ready: ${failing} still failing. Re-dispatch those reviewers concurrently or sequentially in qa and use ${retryRoles} for retries; team_advance moves qa -> docs only after both artifacts pass.`;
+  }
   if (gate.ok) return "Call team_advance to move to the next phase.";
   if (run.phase === "plan") {
     return `${gate.message} Re-dispatch the spec subagent to write plan.md; never use the built-in plan agent.`;
   }
   return owner ? `${gate.message} Owner: ${owner}.` : gate.message;
+}
+
+function renderWaveLine(status: ReviewWaveStatus): string {
+  if (!status.active) return `Review wave: enabled; not active in ${status.phase}.`;
+  const members = status.members
+    .map((member) => {
+      const outcome = member.gate?.ok ? "pass" : "fail";
+      const loop = member.loop
+        ? ` retries ${member.loop.count}${member.loop.escalated ? " (escalated)" : ""}`
+        : "";
+      return `${member.role}=${outcome}${loop}`;
+    })
+    .join(", ");
+  return `Review wave: active in qa; ${status.ready ? "ready" : "not ready"}; generation ${status.generation}; ${members}.`;
 }
 
 function renderStatus(
@@ -143,6 +233,7 @@ function renderStatus(
   notes: number,
   openLessons: number,
   nextAction: string,
+  waveLine?: string,
 ): string {
   const loopText = Object.keys(loops).length === 0
     ? "none"
@@ -158,6 +249,7 @@ function renderStatus(
     `Status: ${run.status}; phase: ${run.phase}; owner: ${owner ?? "none"}`,
     `Gate: ${gate.ok ? "open" : `blocked (${gate.code})`} — ${gate.message}`,
     `Loops: ${loopText} (${counters.loops} total); notes: ${notes}; open lessons: ${openLessons}.`,
+    ...(waveLine ? [waveLine] : []),
     `Tools: ${toolText}; gate denials: ${counters.gate_denials}; unresolved: ${counters.gate_unresolved}.`,
     `Messages: ${messageText}.`,
     `Next: ${nextAction}`,

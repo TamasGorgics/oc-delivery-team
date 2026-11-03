@@ -5,6 +5,7 @@ import path from "node:path";
 import deliveryTeam, { getDeliveryTeamSnapshot } from "../../src/index";
 import { runTeamCli } from "../../src/cli/team";
 import { getDefaultPrompt, withRuntimeGuidance } from "../../src/prompts";
+import { REVIEW_WAVE_GUIDANCE, REVIEW_WAVE_HEADING } from "../../src/prompts/review-wave";
 import { promptProposalSha } from "../../src/prompts/proposals";
 import { ROLE_IDS } from "../../src/roles";
 import { openDatabase } from "../../src/state/db";
@@ -63,6 +64,76 @@ describe("delivery-team plugin registration", () => {
     await cleanupB();
     expect(fake.state.agentTransforms).toHaveLength(0);
     expect(fake.state.commands.size).toBe(0);
+  });
+
+  test("adds review wave guidance only when reviews.parallel is enabled", async () => {
+    const enabledFake = createFakeContext({
+      projectDirectory: tempProject(),
+      options: { reviews: { parallel: true } },
+    });
+    const enabledCleanup = await deliveryTeam.setup(enabledFake.context);
+    assertCleanup(enabledCleanup);
+
+    expect([...enabledFake.state.tools.keys()].sort()).toEqual([
+      "team_advance",
+      "team_lesson_propose",
+      "team_loop",
+      "team_note",
+      "team_rewind",
+      "team_stack",
+      "team_stack_update",
+      "team_start",
+      "team_status",
+    ]);
+    expect([...enabledFake.state.commands.keys()]).toEqual(["team", "team-status", "team-retro"]);
+    for (const role of ["team-lead", "qa", "adversary", "docs"]) {
+      expect(enabledFake.state.agents.get(role)?.system).toContain(REVIEW_WAVE_HEADING);
+    }
+    for (const role of ROLE_IDS.filter((id) => !["team-lead", "qa", "adversary", "docs"].includes(id))) {
+      expect(enabledFake.state.agents.get(role)?.system).not.toContain(REVIEW_WAVE_HEADING);
+    }
+    await enabledCleanup();
+
+    const disabledFake = createFakeContext({ projectDirectory: tempProject() });
+    const disabledCleanup = await deliveryTeam.setup(disabledFake.context);
+    assertCleanup(disabledCleanup);
+    for (const role of ROLE_IDS) {
+      expect(disabledFake.state.agents.get(role)?.system).toBe(getDefaultPrompt(role));
+    }
+    await disabledCleanup();
+  });
+
+  test("appends wave guidance to an approved prompt override when enabled", async () => {
+    const projectDirectory = mkdtempSync(path.join(os.tmpdir(), "delivery-team-plugin-"));
+    temporaryDirectories.push(projectDirectory);
+    const rootDir = path.join(projectDirectory, ".team");
+    const promptDirectory = path.join(rootDir, "prompts");
+    mkdirSync(promptDirectory, { recursive: true });
+    const approvedText = "Human-approved team lead prompt.";
+    writeFileSync(path.join(promptDirectory, "team-lead.md"), approvedText, "utf8");
+    const { db } = await openDatabase(path.join(rootDir, "team.db"));
+    try {
+      const repository = new PromptRepository(db);
+      const version = repository.recordProposal({
+        role: "team-lead",
+        sha: promptProposalSha(approvedText),
+        path: "proposals/team-lead.20260101T000000Z.md",
+      }).row;
+      repository.setStatus(version.id, "approved", "2026-01-01T00:00:00.000Z");
+    } finally {
+      db.close();
+    }
+
+    const fake = createFakeContext({
+      projectDirectory,
+      options: { reviews: { parallel: true } },
+    });
+    const cleanup = await deliveryTeam.setup(fake.context);
+    assertCleanup(cleanup);
+    expect(fake.state.agents.get("team-lead")?.system).toBe(
+      `${withRuntimeGuidance(approvedText)}\n\n${REVIEW_WAVE_HEADING}\n${REVIEW_WAVE_GUIDANCE["team-lead"]!}`,
+    );
+    await cleanup();
   });
 
   test("applies configured models, variants, steps, and context request parameters", async () => {

@@ -15,7 +15,7 @@ import { ensureDirectory, runDirectory } from "./paths";
 export interface ReportInput {
   readonly run: RunRow;
   readonly transitions: readonly PhaseTransitionRow[];
-  readonly loops: readonly { readonly phase: string; readonly count: number }[];
+  readonly loops: readonly { readonly phase: string; readonly role?: string; readonly count: number }[];
   readonly notes: readonly NoteRow[];
   readonly events: readonly Pick<EventRow, "kind" | "at" | "data_json">[];
   readonly toolCalls?: readonly ToolCallRow[];
@@ -137,9 +137,21 @@ export function renderRunReport(input: ReportInput): string {
   if (input.loops.length === 0) {
     lines.push("_No loops used._");
   } else {
-    for (const loop of input.loops) lines.push(`- ${loop.phase}: ${loop.count}`);
+    for (const loop of input.loops) {
+      lines.push(loop.role ? `- ${loop.phase} [${loop.role}]: ${loop.count}` : `- ${loop.phase}: ${loop.count}`);
+    }
   }
   lines.push("");
+
+  const waveEvents = input.events.filter((event) => event.kind.startsWith("review.wave."));
+  if (waveEvents.length > 0) {
+    lines.push("## Review wave");
+    lines.push("");
+    for (const event of waveEvents) {
+      lines.push(renderWaveEvent(event));
+    }
+    lines.push("");
+  }
 
   lines.push("## Gate denials");
   lines.push("");
@@ -170,6 +182,53 @@ export function renderRunReport(input: ReportInput): string {
   }
   lines.push("");
   return lines.join("\n");
+}
+
+function renderWaveEvent(event: Pick<EventRow, "kind" | "at" | "data_json">): string {
+  const data = parseJsonRecord(event.data_json);
+  const generation = numberOrNull(data.generation);
+  const generationText = generation === null ? "" : ` generation ${generation};`;
+  if (event.kind === "review.wave.started") {
+    const cause = typeof data.cause === "string" ? data.cause : "unknown";
+    const members = stringList(data.members).join(", ");
+    return `- ${event.at} started (${cause}):${generationText}${members ? ` members ${members}.` : ""}`;
+  }
+  if (event.kind === "review.wave.denied") {
+    const code = typeof data.gate_code === "string" ? data.gate_code : "unknown";
+    const failing = recordList(data.failing_members)
+      .map((member) => {
+        const role = typeof member.role === "string" ? member.role : "unknown";
+        const artifact = typeof member.artifact === "string" ? ` (${member.artifact})` : "";
+        return `${role}${artifact}`;
+      })
+      .join(", ");
+    return `- ${event.at} denied (${code}):${generationText}${failing ? ` failing ${failing}.` : ""}`;
+  }
+  if (event.kind === "review.wave.completed") {
+    const to = typeof data.to === "string" ? data.to : "docs";
+    const skipped = typeof data.skipped === "string" ? ` (skipped ${data.skipped})` : "";
+    const members = recordList(data.members)
+      .map((member) => (typeof member.role === "string" ? member.role : "unknown"))
+      .join(", ");
+    const duration = numberOrNull(data.duration_ms);
+    const durationText = duration === null ? "" : `; duration ${formatDuration(duration)}`;
+    return `- ${event.at} completed:${generationText} ${members || "members"} -> ${to}${skipped}${durationText}.`;
+  }
+  return `- ${event.at} ${event.kind.replace(/^review\.wave\./, "")}: ${event.data_json ?? ""}`;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function recordList(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null && !Array.isArray(entry))
+    : [];
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 export function writeRunReport(rootDir: string, input: ReportInput): string {

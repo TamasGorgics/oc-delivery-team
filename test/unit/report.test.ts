@@ -201,6 +201,69 @@ describe("run report", () => {
     expect(report).toContain("- 2026-01-01T10:01:00.000Z [decision] approved");
   });
 
+  test("renders role-qualified loops and a review wave section only for wave events", () => {
+    const sequential = renderRunReport(input());
+    expect(sequential).toContain("- test: 2");
+    expect(sequential).not.toContain("## Review wave");
+
+    const report = renderRunReport({
+      ...input(),
+      loops: [
+        { phase: "test", role: "", count: 2 },
+        { phase: "qa", role: "adversary", count: 1 },
+        { phase: "qa", role: "qa", count: 2 },
+      ],
+      events: [
+        ...input().events,
+        {
+          kind: "review.wave.started",
+          at: "2026-01-01T10:08:00.000Z",
+          data_json: JSON.stringify({
+            phase: "qa",
+            members: ["qa", "adversary"],
+            cause: "advance",
+            generation: 1,
+            max_loops: 3,
+          }),
+        },
+        {
+          kind: "review.wave.denied",
+          at: "2026-01-01T10:09:00.000Z",
+          data_json: JSON.stringify({
+            phase: "qa",
+            gate_code: "verdict_not_pass",
+            failing_members: [{ role: "qa", artifact: "qa.md", code: "verdict_not_pass" }],
+            ready: false,
+            generation: 1,
+          }),
+        },
+        {
+          kind: "review.wave.completed",
+          at: "2026-01-01T10:10:00.000Z",
+          data_json: JSON.stringify({
+            phase: "qa",
+            to: "docs",
+            skipped: "adversary",
+            duration_ms: 1500,
+            generation: 1,
+            members: [{ role: "qa" }, { role: "adversary" }],
+          }),
+        },
+      ],
+    });
+
+    expect(report).toContain("- test: 2");
+    expect(report).toContain("- qa [qa]: 2");
+    expect(report).toContain("- qa [adversary]: 1");
+    expect(report).not.toContain("- test [");
+    expect(report).toContain("## Review wave");
+    expect(report).toContain("started (advance): generation 1; members qa, adversary.");
+    expect(report).toContain("denied (verdict_not_pass): generation 1; failing qa (qa.md).");
+    expect(report).toContain("completed: generation 1; qa, adversary -> docs (skipped adversary); duration 1.5 s.");
+    expect(report.indexOf("## Review wave")).toBeGreaterThan(report.indexOf("## Loops"));
+    expect(report.indexOf("## Review wave")).toBeLessThan(report.indexOf("## Gate denials"));
+  });
+
   test("writes report.md under the run directory", () => {
     const rootDir = mkdtempSync(path.join(os.tmpdir(), "delivery-team-report-"));
     directories.push(rootDir);

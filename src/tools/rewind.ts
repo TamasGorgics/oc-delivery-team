@@ -1,4 +1,5 @@
 import { isEarlierPhase, isPhase, type Phase } from "../state/phases";
+import { REVIEW_MEMBERS, reviewArtifactPaths } from "../state/reviews";
 import {
   defineTeamTool,
   failure,
@@ -49,11 +50,19 @@ export function createRewindTool(runtime: ToolRuntime) {
       if (run.status !== "open") {
         return failure(`Run ${run.id} is ${run.status}; only an open run can rewind.`, "run_not_open");
       }
+      const enabled = runtime.config.reviews.parallel;
+      if (enabled && to === "adversary") {
+        return failure(
+          "The parallel review wave owns adversary.md inside qa. Rewind to qa to restart both reviews, or to implement for fixes.",
+          "review_wave_rewind_blocked",
+        );
+      }
       if (!isEarlierPhase(to, run.phase)) {
         return failure(`Cannot rewind from ${run.phase} to ${to}; the target must be earlier.`, "invalid_transition");
       }
 
-      const count = services.runs.incrementLoop(run.id, to);
+      const waveReentry = enabled && to === "qa";
+      const count = services.runs.incrementLoop(run.id, to, "");
       const maxLoops = runtime.config.maxLoops;
       runtime.trace.event(
         "loop.incremented",
@@ -91,6 +100,23 @@ export function createRewindTool(runtime: ToolRuntime) {
         { runId: run.id, sessionId: identity.sessionId, agent: identity.agent, toolCallId: identity.toolCallId, phase: to },
       );
 
+      let reviewGeneration: number | undefined;
+      if (waveReentry) {
+        reviewGeneration = services.runs.countPhaseEntries(run.id, "qa");
+        runtime.trace.event(
+          "review.wave.started",
+          {
+            phase: "qa",
+            members: [...REVIEW_MEMBERS],
+            artifacts: reviewArtifactPaths(runtime.config.rootDir, run.id),
+            cause: "rewind",
+            generation: reviewGeneration,
+            max_loops: maxLoops,
+          },
+          { runId: run.id, sessionId: identity.sessionId, agent: identity.agent, toolCallId: identity.toolCallId, phase: to },
+        );
+      }
+
       return ok(
         {
           run: run.id,
@@ -100,8 +126,11 @@ export function createRewindTool(runtime: ToolRuntime) {
           loop_count: count,
           remaining: Math.max(0, maxLoops - count),
           max_loops: maxLoops,
+          ...(waveReentry ? { scope: "wave", review_generation: reviewGeneration } : {}),
         },
-        `Run ${run.id} rewound from ${run.phase} to ${to}. Loop ${count}/${maxLoops}; ${Math.max(0, maxLoops - count)} remaining.`,
+        waveReentry
+          ? `Run ${run.id} rewound from ${run.phase} to qa and restarted the parallel review wave (generation ${reviewGeneration}). Loop ${count}/${maxLoops}; ${Math.max(0, maxLoops - count)} remaining. Both reviewers must overwrite their artifacts.`
+          : `Run ${run.id} rewound from ${run.phase} to ${to}. Loop ${count}/${maxLoops}; ${Math.max(0, maxLoops - count)} remaining.`,
       );
     },
   });
