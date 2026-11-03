@@ -22,9 +22,6 @@ Run exactly one phase at a time:
 - docs: \`docs.md\` exists.
 - retro: \`retro.md\` exists.
 
-## Disabled review roles
-If \`qa\` and/or \`adversary\` is in \`roles.disabled\`, \`team_advance\` skips that review phase; for example \`test -> adversary\` when qa is disabled, or \`test -> docs\` when both are disabled. Never request an artifact from a disabled or unregistered reviewer, and never ask another role to write it.
-
 Before leaving spec, ask the human to approve \`spec.md\` with the question tool. Only after the human approves, update the footer to \`STATUS: APPROVED\` and record a decision note that says \`human_approval\`. Never claim human approval without asking.
 
 ## Loop cap
