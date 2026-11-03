@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { runTeamCli } from "../../src/cli/team";
 import deliveryTeam from "../../src/index";
-import { isSafeWorktreeName } from "../../src/state/worktrees";
+import { createTeamWorktree, isSafeWorktreeName, WorktreeError } from "../../src/state/worktrees";
 import { createFakeContext, type FakeContextHarness } from "../fakes/ctx";
 
 interface Harness {
@@ -198,6 +198,52 @@ describe("team_worktree", () => {
       expect(result.error).toContain("Git is unavailable");
       expect(result.error).toContain("sequential");
       expect(result.error).toContain("do not retry");
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  });
+
+  test("returns fallback wording for a creation-path git_unavailable", () => {
+    const projectDir = tempDirectory();
+    const fakeBin = tempDirectory();
+    const fakeGit = path.join(fakeBin, "git");
+    // The first two probes succeed; the worktree-add lookup then fails with ENOENT.
+    writeFileSync(fakeGit, [
+      "#!/bin/sh",
+      'if [ "$2" = "--path-format=absolute" ]; then',
+      `  printf '%s\\n' "${projectDir}/.git"`,
+      "  exit 0",
+      "fi",
+      'if [ "$2" = "--show-toplevel" ]; then',
+      `  printf '%s\\n' "${projectDir}"`,
+      '  /bin/rm -f "$0"',
+      "  exit 0",
+      "fi",
+      "exit 1",
+      "",
+    ].join("\n"), "utf8");
+    chmodSync(fakeGit, 0o755);
+
+    const originalPath = process.env.PATH;
+    process.env.PATH = fakeBin;
+    try {
+      let caught: unknown;
+      try {
+        createTeamWorktree({
+          projectDir,
+          baseDir: path.join(path.dirname(projectDir), "worktrees"),
+          run: "run-one",
+          name: "task-one",
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(WorktreeError);
+      const error = caught as WorktreeError;
+      expect(error.code).toBe("git_unavailable");
+      expect(error.message).toContain("Could not run git worktree add");
+      expect(error.message).toContain("continue sequentially in the main checkout");
+      expect(error.message).toContain("do not retry team_worktree");
     } finally {
       process.env.PATH = originalPath;
     }
