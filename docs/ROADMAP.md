@@ -16,12 +16,13 @@ Implementation roadmap for [SPEC.md](./SPEC.md) (draft v1.1). The spec is the so
 | **M5** | Learning loop: lessons, prompt proposals, approvals | L | M2, M4 | ☑ Done |
 | **M6** | Parallel worktrees and eval harness (optional flag) | L | M2, M4 | ☑ Done |
 | **M7** | Packaging, documentation, clean-install release | M | all | ◐ In progress |
+| **M8** | Parallel review wave (optional) | M | M2, M4, M7 | ☐ not started |
 
 Legend: ☐ not started · ◐ in progress · ☑ done · ⊘ blocked.
 
 ```
 M0 ──► M1 ──► M2 ──┬──► M3 ──► M4 ──► M5 ──┐
-                   │                       ├──► M6 ──► M7
+                   │                       ├──► M6 ──► M7 ──► M8
                    └───────────────────────┘
 ```
 
@@ -441,6 +442,44 @@ Concrete probes to run:
 
 ---
 
+## M8 — Parallel review wave (optional)
+
+**Goal:** shorten the review tail by running QA and adversary concurrently after `test`, without changing the default sequential pipeline. The feature is opt-in and falls back to sequential reviews when concurrency is unavailable.
+
+### Work
+
+- [ ] Add `reviews.parallel` (default `false`) to config parsing and warnings.
+- [ ] Treat `qa` as a two-artifact review wave when enabled: `qa.md` and `adversary.md` are both required before advancing.
+- [ ] Enforce the review barrier: QA `VERDICT: PASS` and adversary `BLOCKERS: 0`; deny with the failing member and artifact path.
+- [ ] Advance directly from `qa` to `docs` on barrier success; skip the `adversary` phase; keep `retro` last.
+- [ ] Reject `team_rewind(to="adversary")` while the wave is enabled; use `qa` to restart the wave or `implement` for fixes.
+- [ ] Add role-scoped loop counters `(run, phase, role)`; migration 3 preserves existing phase-level counts with an empty role.
+- [ ] Keep trace/report identity for both reviewers: agent/role on tool calls, notes, and loop events; add `review.wave.started|denied|completed` events.
+- [ ] Expose the wave in `team_start` and `team_status`: enabled, active, ready, members, artifacts, and per-member gate results.
+- [ ] Update the lead prompt for concurrent dispatch, the barrier, status polling, and sequential fallback.
+- [ ] Update QA, adversary, and docs prompts for artifact ownership and barrier timing.
+- [ ] Preserve the exact sequential `qa → adversary` behavior when disabled.
+- [ ] Document the option, behavior, fallback, and limitations in README, SPEC §7.7, architecture, and api-notes.
+- [ ] Add concurrency, barrier, fallback, status, rewind, migration, and timing coverage.
+- [ ] Run a host concurrency spike (two child sessions) and record the result; keep the fallback for rate limits or serialized hosts.
+
+### Acceptance
+
+- [ ] With `reviews.parallel=false` (default), the pipeline and all existing gates are unchanged.
+- [ ] With `reviews.parallel=true`, QA and adversary run concurrently after `test` and both write their artifacts.
+- [ ] The `qa` barrier denies a missing artifact, a failing QA verdict, and non-zero blockers.
+- [ ] Both members passing advances directly `qa → docs`; docs starts only after the barrier; `retro` remains last.
+- [ ] QA and adversary retries use separate loop counters; no collision or combined escalation.
+- [ ] Tool calls, notes, loops, and review events identify the reviewer role.
+- [ ] Sequential fallback still requires both artifacts and the same barrier.
+- [ ] Rewinding to `adversary` is rejected while the wave is enabled.
+- [ ] Migration preserves existing runs and loop counts.
+- [ ] Typecheck, full tests, and CI pass; the release is a minor version (`v0.2.0`), with `v1.0.0` still blocked on the manual `/team` verification.
+
+**Suggested commits:** `docs: specify parallel review wave` → `feat: add review wave config and barrier` → `feat: isolate review loops and traces` → `test: cover parallel review fallback` → `chore: release v0.2.0`.
+
+---
+
 ## Cross-cutting workstreams
 
 | Workstream | Rules | Milestones |
@@ -478,7 +517,11 @@ Map SPEC §16 to concrete files so nothing is forgotten.
 | Lesson validation, ranking, budget, duplicates | `test/unit/lessons.test.ts` | M5 |
 | Prompt approval and injection | `test/unit/prompt-approval.test.ts` | M5 |
 | Worktree validation and creation | `test/unit/worktree.test.ts` | M6 |
-| WAL concurrency | `test/integration/concurrency.test.ts` | M6 |
+| WAL concurrency | `test/unit/worktree-concurrency.test.ts` | M6 |
+| Review barrier and wave gates | `test/unit/artifacts.test.ts`, `test/unit/reviews.test.ts` | M8 |
+| Parallel review pipeline, fallback, status, rewind | `test/unit/tools.test.ts` | M8 |
+| Role-scoped loop migration and isolation | `test/unit/state.test.ts`, `test/unit/reviews.test.ts` | M8 |
+| Two-reviewer WAL concurrency | `test/unit/review-concurrency.test.ts` | M8 |
 | Eval harness and criteria | `test/unit/evals.test.ts` | M6 |
 | Headless plugin integration | `test/integration/opencode.test.ts` | M0/M6, if V12 allows |
 | Typecheck | `tsc --noEmit` in CI | all |
@@ -495,6 +538,8 @@ Map SPEC §16 to concrete files so nothing is forgotten.
 | Headless eval mechanism | M0/M6 | Actual headless run | Pluggable stub runner |
 | Prompt reload mechanism | M5 | `ctx.agent.reload()` | Restart-required path |
 | Worktrees default | M6 | Disabled | Explicit opt-in only |
+| Parallel review wave | M8 | Disabled | Sequential `qa → adversary`; fallback when concurrency is unavailable |
+| Review loop scope | M8 | `(run, phase, role)` in parallel mode; phase-level when disabled | Wave-level counter on rewind |
 | Auto model routing | M1 | Disabled | Implement only if catalog metadata is reliable |
 | Approval authority | M5 | Human CLI only | Never add an agent tool |
 
@@ -507,6 +552,8 @@ Map SPEC §16 to concrete files so nothing is forgotten.
 | Hook failures break intercepted operations | Medium | High | Fail-safe wrapper; intentional gate throws only; broken-DB test. |
 | Host runtime lacks the assumed SQLite driver | Medium | High | Implement both adapters; test in the actual host in M0. |
 | `SQLITE_BUSY` under parallel worktrees | Medium | High | WAL, busy timeout, one main-repo DB path, short transactions, concurrency test. |
+| Host serializes or rate-limits concurrent reviewers | Medium | Medium | Opt-in flag, sequential fallback, per-role loops, timing measurement, clear status. |
+| Concurrent reviewers collide on loops or traces | Medium | High | Role-scoped loops, agent/role on every trace row, review-wave events, WAL concurrency test. |
 | Event stream missing or unstable | Medium | Medium | Degrade to tool-context sessions; no blocking setup; document. |
 | Headless OpenCode unavailable | Medium | Medium | Stub eval runner behind a pluggable interface; keep unit coverage. |
 | Gate false positives block legitimate work | Medium | High | Default `strict=false`, allow `.team/`, clear messages, profile-driven scopes, allow overrides. |
@@ -519,7 +566,7 @@ Map SPEC §16 to concrete files so nothing is forgotten.
 
 Copy of SPEC §20, used as the final checklist:
 
-- [ ] All milestones M0–M7 acceptance criteria met (M6 harness may be a documented stub if headless runs are impossible).
+- [ ] All milestones M0–M8 acceptance criteria met (M6 harness may be a documented stub if headless runs are impossible; M8 is opt-in and may remain disabled by default).
 - [ ] `tsc --noEmit` and the full test suite pass.
 - [ ] A clean-project install loads the plugin; `/team <goal>` drives a toy task through every phase with gates enforced; `team report <run>` produces the report; an approved lesson appears in a later run’s requests.
 - [ ] `docs/api-notes.md` lists every resolved `[VERIFY]` and every deviation from the spec.

@@ -1,6 +1,6 @@
 # Spec: `opencode-delivery-team` — a software delivery team as an OpenCode V2 plugin
 
-Status: draft v1.1 (v1.1 adds the stack-agnostic design §6.3 and per-role model routing §6.2) · Audience: an AI coding agent (OpenCode or Claude Code) implementing this end to end · Language: TypeScript
+Status: draft v1.2 (v1.2 adds the optional parallel review wave §7.7; v1.1 adds the stack-agnostic design §6.3 and per-role model routing §6.2) · Audience: an AI coding agent (OpenCode or Claude Code) implementing this end to end · Language: TypeScript
 
 ---
 
@@ -22,7 +22,7 @@ A single OpenCode plugin that gives a developer an **entire software delivery te
 
 - One **orchestrator** (the main/primary session, agent `team-lead`) that runs a delivery pipeline.
 - A set of **specialist subagents**: researcher, spec writer, developer, tester, QA, adversary, docs writer, retro.
-- A **phase-gated workflow** (brainstorm → spec → plan → implement → test → qa → adversary → docs → retro → done) that is *enforced by tools and hooks*, not just requested in prompts.
+- A **phase-gated workflow** (brainstorm → spec → plan → implement → test → qa → adversary → docs → retro → done) that is *enforced by tools and hooks*, not just requested in prompts. The `qa` and `adversary` reviews may optionally run as one concurrent review wave (§7.7).
 - **Observability**: every run, phase, session, tool call, gate decision, and loop is recorded in SQLite and queryable via a CLI and a status tool.
 - **Learning / self-improvement**: a retro phase extracts lessons, which (after human approval) are injected into future model requests; agent prompt changes are *proposed* by the retro agent and *approved by a human*.
 - **Technology-stack agnostic**: the team works on any language, framework or toolchain. Build/test/lint/run commands and file conventions come from a detected, overridable **Stack Profile** (§6.3), never from assumptions baked into code or prompts.
@@ -203,7 +203,8 @@ Validate by hand (or with `zod` listed in `dependencies`); unknown keys → warn
 |---|---|---|---|
 | `root` | string | `".team"` | Data dir, resolved against the project directory |
 | `dbPath` | string | `<root>/team.db` | SQLite file |
-| `maxLoops` | int | `3` | Max fix/review loops per (run, phase) before escalation |
+| `maxLoops` | int | `3` | Max fix/review loops per (run, phase, role) before escalation |
+| `reviews.parallel` | bool | `false` | Run QA and adversary concurrently as one review wave in the `qa` phase; see §7.7. Sequential QA → adversary remains the default and fallback |
 | `lessons.topN` | int | `8` | Max lessons injected per request |
 | `lessons.budgetChars` | int | `4000` | Hard char cap on injected lesson text |
 | `models` | object | `{}` (everything inherits the host default) | Model routing: tiers, per-role overrides, params, fallbacks. See §6.2 |
@@ -348,6 +349,8 @@ With no configuration every role inherits the host default and everything works.
 
 `brainstorm → spec → plan → implement → test → qa → adversary → docs → retro → done`
 
+This phase list is fixed. In the default sequential mode every phase runs once. When `reviews.parallel` is true, the `qa` phase becomes a two-artifact review wave: QA and adversary run concurrently, and the `adversary` phase is skipped. See §7.7.
+
 ### 7.2 Required artifacts to *leave* a phase
 
 Artifacts live at `<root>/runs/<run>/`.
@@ -359,10 +362,12 @@ Artifacts live at `<root>/runs/<run>/`.
 | plan | `plan.md` | — |
 | implement | `impl-notes.md` | — |
 | test | `test-report.md` | `RESULT: PASS` and `EXIT: 0` (or `RESULT: SKIPPED`, see §6.3 item 10) |
-| qa | `qa.md` | `VERDICT: PASS` |
-| adversary | `adversary.md` | `BLOCKERS: 0` |
+| qa | `qa.md`; in parallel review mode also `adversary.md` | `VERDICT: PASS`; in parallel review mode also `BLOCKERS: 0` |
+| adversary | `adversary.md` (sequential mode only) | `BLOCKERS: 0` |
 | docs | `docs.md` | — |
 | retro | `retro.md` | — |
+
+In parallel review mode the `qa` row is a barrier: both `qa.md` and `adversary.md` must satisfy their footers before `team_advance` moves from `qa` to `docs`. The `adversary` phase is not entered, and there is no partial advance after only one review.
 
 ### 7.3 Machine-readable footer
 
@@ -382,8 +387,8 @@ Keys by artifact: `STATUS` (spec); `RESULT` ∈ `PASS|FAIL|SKIPPED`, `COMMAND` (
 
 ### 7.5 Transitions
 
-- **Forward:** `team_advance` moves exactly one phase forward, only if the gate passes.
-- **Backward:** `team_rewind(to, reason)` moves to an earlier phase (typically `implement`) after a FAIL result. Each rewind increments the loop counter for the phase being re-entered; if it exceeds `maxLoops` the tool refuses with `ESCALATE_TO_HUMAN` and records `loop.exceeded`.
+- **Forward:** `team_advance` moves exactly one phase forward, only if the gate passes. In parallel review mode the successful `qa` barrier moves directly to `docs`, skipping `adversary`.
+- **Backward:** `team_rewind(to, reason)` moves to an earlier phase (typically `implement`) after a FAIL result. Each rewind increments the loop counter for the phase being re-entered; if it exceeds `maxLoops` the tool refuses with `ESCALATE_TO_HUMAN` and records `loop.exceeded`. While `reviews.parallel` is true, rewinding to `adversary` is rejected because `qa` owns the whole review wave.
 - `done` is terminal; run status becomes `closed`.
 - Runs also have a status: `open | blocked | closed | aborted`.
 
@@ -392,6 +397,22 @@ Keys by artifact: `STATUS` (spec); `RESULT` ∈ `PASS|FAIL|SKIPPED`, `COMMAND` (
 - `team_start` binds the calling `sessionID` (from the executor's second argument **[DOC]**) as the run's `lead_session_id`.
 - Tools that take `run` accept it optionally. Resolution order: explicit `run` arg → run bound to the calling session → run bound to the calling session's parent (via `sessions` table, populated from events **[VERIFY]**) → the single open run in this project → ambiguous/none.
 - Gate hooks may not have a session ID **[VERIFY]**; see `gating.strict` (§5) for unresolved behavior.
+
+### 7.7 Parallel review wave (optional)
+
+`reviews.parallel` defaults to `false`. When it is false, the pipeline is unchanged: `test → qa → adversary → docs → retro`.
+
+When it is true:
+
+- After the `test` gate passes, `team_advance` enters `qa` as usual. The lead dispatches `qa` and `adversary` in the same turn and does not call `team_advance` between them.
+- Both reviewers receive the run id, goal, exact `artifact_dir`, and paths to prior artifacts. QA owns `qa.md`; adversary owns `adversary.md`. They write separate files and may run at the same time.
+- The `qa` gate is a **barrier**. It requires both `qa.md` and `adversary.md`, `VERDICT: PASS`, and `BLOCKERS: 0`. A missing or failing member keeps the run in `qa`.
+- On success, `team_advance` moves directly from `qa` to `docs`. Docs starts only after the barrier passes. `retro` remains last.
+- If either reviewer fails, the lead retries that reviewer with `team_loop` or rewinds to `implement` for fixes. The barrier stays closed; a passing artifact for one role never advances the run.
+- **Fallback:** if the host cannot run both subagents concurrently, or either reviewer fails to start, the lead runs the missing reviewer sequentially in the same `qa` phase. The barrier and artifact requirements do not change.
+- **Loop isolation:** per-review retries are keyed by `(run, phase, role)`, so QA and adversary do not share a retry cap. A rewind that re-enters `qa` increments the wave-level counter (`role=''`) and restarts both reviews.
+- **Trace/report:** both reviewers remain identifiable by agent/role in tool calls, notes, and loop events. `review.wave.started`, `review.wave.denied`, and `review.wave.completed` events record the wave lifecycle.
+- `team_rewind(to="adversary")` is rejected while `reviews.parallel` is true; use `qa` to restart the wave or `implement` for fixes.
 
 ---
 
@@ -402,10 +423,10 @@ All tools: JSON-schema input with `additionalProperties: false`; return `{ struc
 | Tool | Input | Behavior |
 |---|---|---|
 | `team_start` | `{ title: string, description?: string }` | Create run (`<base36-ts>-<slug>`), create dir, bind session, phase=`brainstorm`, trace `run.start`. Returns run id + artifact dir. |
-| `team_status` | `{ run?: string }` | Phase, required artifact + footer status, loop counters, open lessons count, last N trace events. |
-| `team_advance` | `{ run?: string }` | Check §7.2 gate; on pass move forward, record phase transition + duration; on fail return reason, trace `gate.denied`. |
-| `team_rewind` | `{ run?: string, to: Phase, reason: string }` | §7.5. Enforces loop cap. |
-| `team_loop` | `{ run?: string, reason: string }` | Increment/check retry counter for the current phase; returns remaining loops or `ESCALATE_TO_HUMAN`. Agents call it before any retry. |
+| `team_status` | `{ run?: string }` | Phase, required artifact + footer status, review-wave barrier status, loop counters, open lessons count, last N trace events. |
+| `team_advance` | `{ run?: string }` | Check §7.2 gate, including the §7.7 review barrier; on pass move forward, record phase transition + duration; on fail return reason, trace `gate.denied`. |
+| `team_rewind` | `{ run?: string, to: Phase, reason: string }` | §7.5. Enforces loop cap; rejects `adversary` while the parallel review wave is enabled. |
+| `team_loop` | `{ run?: string, reason: string }` | Increment/check the retry counter for the current phase and calling review role; returns remaining loops or `ESCALATE_TO_HUMAN`. Agents call it before any retry. |
 | `team_note` | `{ run?: string, kind: "decision"\|"finding"\|"risk"\|"question", text: string }` | Append to `notes` table with caller `agent` and `sessionID`. |
 | `team_lesson_propose` | `{ run?: string, role: string, text: string, evidence?: string, stack?: string }` | Insert lesson with `status='proposed'`. **There is deliberately no agent-callable approve tool.** |
 | `team_worktree` | `{ run?: string, name: string }` | Only if `worktrees.enabled`. Run `git worktree add <baseDir>/<run>-<name> -b team/<run>/<name>`; return path. Never deletes. Validate `name` against `^[a-z0-9-]{1,40}$`. Uses `child_process` with an args array (no shell interpolation). |
@@ -499,7 +520,8 @@ CREATE TABLE phase_transitions (
 
 CREATE TABLE loops (
   run_id TEXT NOT NULL REFERENCES runs(id), phase TEXT NOT NULL,
-  count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (run_id, phase)
+  role TEXT NOT NULL DEFAULT '',  -- '' for phase/wave scope; reviewer role in parallel review
+  count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (run_id, phase, role)
 );
 
 CREATE TABLE sessions (
@@ -553,6 +575,8 @@ CREATE TABLE eval_runs (
 );
 ```
 
+Migration 3 rebuilds `loops` to add the `role` column and change the primary key to `(run_id, phase, role)`. Existing loop rows are copied with `role=''`, preserving the sequential cap.
+
 `state/trace.ts` exposes `trace.event(kind, data)`, `trace.toolCall(row)`; both swallow and log (to stderr / `events` as `trace.error`) any DB error.
 
 ---
@@ -605,6 +629,7 @@ Agents must have **no** way to invoke these (they are not tools). Note in docs: 
 - With `worktrees.enabled`, `team-lead` may run independent `developer` tasks in parallel. Each developer calls `team_worktree` with the run id and a unique name first, then uses only the returned path (absolute paths for file tools; commands run from that worktree). If the tool is disabled or creation fails, the lead dispatches sequential developers in the main checkout.
 - Merge strategy: the read-only lead coordinates integration by assigning a developer to the main checkout. That developer merges the reported `team/<run>/<name>` branches during `implement`, resolves conflicts, and runs Stack Profile checks; the lead reviews the outcome and records a `decision` note. Conflicts that need replanning use `team_loop`.
 - Worktrees share the main repository's `.team/` database and run artifacts (§10.1). Verify with separate worker processes that trace writes and run advances on the shared WAL database do not return `SQLITE_BUSY` (§16).
+- QA and adversary do not need worktrees: they are read-only reviewers that write separate artifact files in the same run directory. With `reviews.parallel` enabled they run concurrently against the shared WAL database; per-role loop keys and ordinary agent/role trace fields keep their work separate (§7.7).
 - Worktrees require a Git repository. In a non-Git project `team_worktree` returns a clear error and `team-lead` falls back to sequential developers in place.
 - v1 does not clean up worktrees. `team runs` lists delivery-team branches from `git worktree list` for manual cleanup.
 
@@ -656,7 +681,8 @@ If a verification contradicts the default **and** no fallback works, stop and re
 - **Stack detection tests:** one fixture file listing per marker-table row (§6.3 item 4), including monorepo/workspace cases, multi-language projects, repos whose Makefile/scripts override ecosystem defaults, and an empty directory (empty profile). Resolution-order tests for human file > options override > run profile > detected. Detection must not execute any command or touch the network (assert via spies).
 - **Agnosticism lint test:** the prompt denylist scan in §6.3 item 8.
 - **Fake ctx (`test/fakes/ctx.ts`):** records `agent.transform` drafts, tool registrations, hook registrations; lets tests invoke tool executors and hooks directly. Test that the default export has `id === "delivery-team"` and that `setup` registers: all roles (minus disabled), all `team_*` tools, before/after hooks, request hook, commands.
-- **Concurrency test:** two processes (or workers) write trace rows + advance different runs on one WAL DB without `SQLITE_BUSY` failures.
+- **Concurrency test:** two processes (or workers) write trace rows + advance different runs on one WAL DB without `SQLITE_BUSY` failures, and two review workers can write separate artifacts plus role-scoped loop rows for one run without collision.
+- **Parallel review tests:** `reviews.parallel=false` preserves the sequential `qa → adversary` pipeline; enabled mode denies the `qa` barrier when either artifact is missing, QA does not pass, or blockers remain; both passing moves directly `qa → docs`; docs waits for the barrier; loop counters are isolated by reviewer role; rewinding to `adversary` is rejected; sequential fallback still requires both artifacts; `team_status` exposes the wave state.
 - **Integration (if V12 resolved):** load the plugin in a headless OpenCode; assert `opencode2 api get /api/plugin` includes `delivery-team`; call `team_start`/`team_advance` through a scripted session; assert edit-blocking before `implement`.
 - **Typecheck:** `tsc --noEmit` clean, strict. **Lint:** whatever the repo configures; no `any` except at documented `[VERIFY]` boundaries (wrap them in one `compat.ts` module).
 
@@ -679,6 +705,8 @@ If a verification contradicts the default **and** no fallback works, stop and re
 **M6 — Parallel worktrees (optional flag) & evals harness.** `team_worktree`, concurrency test, `evals/` runner. *Accept:* two worktrees created for one run; concurrent writes succeed; eval harness runs at least one fixture end to end or ships as a documented stub.
 
 **M7 — Packaging & docs.** `package.json` (`exports`, `bin`, `dependencies` includes every runtime import), README with install/config/usage, `docs/architecture.md`, `.gitignore` guidance, publish dry-run (`npm pack`) installs into a clean project and loads. *Accept:* clean-project install test passes; README quick start works verbatim.
+
+**M8 — Parallel review wave (optional).** Add `reviews.parallel` (default false). Run QA and adversary concurrently inside the `qa` phase, with a barrier requiring both `qa.md` and `adversary.md`, `VERDICT: PASS`, and `BLOCKERS: 0`. Advance directly from `qa` to `docs` only after the barrier passes; keep `retro` last. Add role-scoped loop counters, review-wave trace events, status visibility, sequential fallback, and tests. *Accept:* sequential mode is unchanged; enabled mode produces both artifacts and waits for both; no loop-counter collision or lost role identity; the feature can be disabled without changing existing runs.
 
 ---
 
@@ -703,7 +731,7 @@ OpenTelemetry exporter; web dashboard; automatic prompt A/B rollouts; cross-proj
 
 ## 20. Definition of done
 
-1. All milestones M0–M7 acceptance criteria met (M6 may ship its harness as documented stub only if headless runs are impossible).
+1. All milestones M0–M8 acceptance criteria met (M6 may ship its harness as documented stub only if headless runs are impossible; M8 may remain opt-in and disabled by default).
 2. `tsc --noEmit` and the full test suite pass.
 3. A clean-project install loads the plugin, `/team <goal>` drives a toy task through every phase with gates enforced, `team report <run>` produces the report, and an approved lesson appears in a later run's requests.
 4. `docs/api-notes.md` lists every resolved `[VERIFY]` and every deviation from this spec.
