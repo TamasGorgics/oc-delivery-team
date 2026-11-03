@@ -6,7 +6,7 @@ import {
   type NoteLike,
 } from "./artifacts";
 import { runArtifactPath } from "./paths";
-import { nextPhase, type Phase } from "./phases";
+import { nextPhase, type Phase, type ReviewPhase } from "./phases";
 import type { PhaseTransitionRow, RunStatus } from "./runs";
 
 /**
@@ -25,6 +25,20 @@ export const REVIEW_ARTIFACTS: Readonly<Record<ReviewRole, string>> = {
 
 export function isReviewRole(value: unknown): value is ReviewRole {
   return typeof value === "string" && (REVIEW_MEMBERS as readonly string[]).includes(value);
+}
+
+/**
+ * A disabled review role has no registered agent, so its phase has no artifact
+ * gate and advancing past it must not require `qa.md` or `adversary.md`.
+ */
+export function disabledReviewGate(phase: ReviewPhase): GateResult {
+  return {
+    ok: true,
+    code: "ok",
+    message: `The ${phase} review role is disabled; no review artifact is required.`,
+    artifact: "",
+    artifactPath: "",
+  };
 }
 
 /**

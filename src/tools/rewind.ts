@@ -1,4 +1,4 @@
-import { isEarlierPhase, isPhase, type Phase } from "../state/phases";
+import { isEarlierPhase, isPhase, isReviewPhaseDisabled, type Phase } from "../state/phases";
 import { REVIEW_MEMBERS, reviewArtifactPaths } from "../state/reviews";
 import {
   defineTeamTool,
@@ -49,6 +49,12 @@ export function createRewindTool(runtime: ToolRuntime) {
 
       if (run.status !== "open") {
         return failure(`Run ${run.id} is ${run.status}; only an open run can rewind.`, "run_not_open");
+      }
+      if (isReviewPhaseDisabled(to, runtime.config.roles.disabled)) {
+        return failure(
+          `The ${to} review role is disabled; rewind to an enabled phase instead. No loop counter was changed.`,
+          "review_role_disabled",
+        );
       }
       const enabled = runtime.config.reviews.parallel;
       if (enabled && to === "adversary") {

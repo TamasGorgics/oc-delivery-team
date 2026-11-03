@@ -1,9 +1,10 @@
 import { validatePhaseGate } from "../state/artifacts";
-import { nextPhase } from "../state/phases";
+import { isReviewPhase, isReviewPhaseDisabled, nextAdvanceTarget, type ReviewPhase } from "../state/phases";
 import { writeRunReport } from "../state/report";
 import { PromptRepository } from "../state/prompts";
 import {
   REVIEW_MEMBERS,
+  disabledReviewGate,
   evaluateReviewBarrier,
   reviewAdvanceTarget,
   reviewArtifactPaths,
@@ -56,8 +57,13 @@ export function createAdvanceTool(runtime: ToolRuntime) {
       }
 
       const enabled = runtime.config.reviews.parallel;
+      const disabledRoles = runtime.config.roles.disabled;
       const waveGate = enabled && run.phase === "qa";
-      const target = waveGate ? reviewAdvanceTarget(run.phase, true) : nextPhase(run.phase);
+      const targetPlan = waveGate
+        ? { target: reviewAdvanceTarget(run.phase, true), skipped: [] as ReviewPhase[] }
+        : nextAdvanceTarget(run.phase, disabledRoles);
+      const target = targetPlan?.target;
+      const skipped = targetPlan?.skipped ?? [];
       if (!target) return failure(`Run ${run.id} has no next phase.`, "run_terminal");
 
       const profile = stackService(runtime).resolveForRun(run, false).profile;
@@ -70,13 +76,15 @@ export function createAdvanceTool(runtime: ToolRuntime) {
             notes,
           })
         : undefined;
-      const gate = barrier ?? validatePhaseGate({
-        phase: run.phase,
-        rootDir: runtime.config.rootDir,
-        runId: run.id,
-        profile,
-        notes,
-      });
+      const gate = barrier ?? (isReviewPhaseDisabled(run.phase, disabledRoles) && isReviewPhase(run.phase)
+        ? disabledReviewGate(run.phase)
+        : validatePhaseGate({
+            phase: run.phase,
+            rootDir: runtime.config.rootDir,
+            runId: run.id,
+            profile,
+            notes,
+          }));
 
       if (!gate.ok) {
         runtime.trace.event(
@@ -240,12 +248,13 @@ export function createAdvanceTool(runtime: ToolRuntime) {
           to: target,
           phase: target,
           duration_ms: durationMs,
+          ...(skipped.length > 0 ? { skipped: [...skipped] } : {}),
           ...(reportPath ? { report_path: reportPath } : {}),
           terminal: target === "done",
         },
         target === "done"
           ? `Run ${run.id} advanced from ${run.phase} to done and is now closed.`
-          : `Run ${run.id} advanced from ${run.phase} to ${target}.${reportPath ? ` Report: ${reportPath}` : ""}`,
+          : `Run ${run.id} advanced from ${run.phase} to ${target}.${skipped.length > 0 ? ` Skipped disabled review phase(s): ${skipped.join(", ")}.` : ""}${reportPath ? ` Report: ${reportPath}` : ""}`,
       );
     },
   });

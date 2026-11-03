@@ -80,7 +80,7 @@ function footer(keys: readonly string[], trailing = "\n"): string {
   return `# Artifact\n\n<!-- team-footer -->\n${keys.join("\n")}\n<!-- /team-footer -->${trailing}`;
 }
 
-async function driveToQa(harness: Harness, run: string): Promise<void> {
+async function driveToTest(harness: Harness, run: string): Promise<void> {
   writeArtifact(harness, run, "brainstorm.md", "# Brainstorm\n");
   expect(await call(harness, "team_advance", { run })).toMatchObject({ ok: true, to: "spec" });
   writeArtifact(harness, run, "spec.md", footer(["STATUS: APPROVED"]));
@@ -90,6 +90,10 @@ async function driveToQa(harness: Harness, run: string): Promise<void> {
   expect(await call(harness, "team_advance", { run })).toMatchObject({ ok: true, to: "implement" });
   writeArtifact(harness, run, "impl-notes.md", "# Implementation\n");
   expect(await call(harness, "team_advance", { run })).toMatchObject({ ok: true, to: "test" });
+}
+
+async function driveToQa(harness: Harness, run: string): Promise<void> {
+  await driveToTest(harness, run);
   writeArtifact(harness, run, "test-report.md", footer(["RESULT: PASS", "COMMAND: bun test", "EXIT: 0"]));
   expect(await call(harness, "team_advance", { run })).toMatchObject({ ok: true, to: "qa" });
 }
@@ -1084,6 +1088,151 @@ describe("parallel review wave", () => {
     expect(await call(sequential, "team_loop", { run: sequentialRun, reason: "plain" }))
       .toMatchObject({ loop_count: 1 });
   });
+});
+
+describe("disabled review roles", () => {
+  const configurations = [
+    {
+      label: "default reviews.parallel",
+      makeConfig: (disabled: string[]) => ({ roles: { disabled } }),
+    },
+    {
+      label: "explicit reviews.parallel=false",
+      makeConfig: (disabled: string[]) => ({ roles: { disabled }, reviews: { parallel: false } }),
+    },
+  ];
+
+  for (const { label, makeConfig } of configurations) {
+    test(`skips a disabled adversary and advances test -> qa -> docs (${label})`, async () => {
+      const harness = await setup({ config: makeConfig(["adversary"]) });
+      const run = (await call(harness, "team_start", { title: "No adversary" })).run as string;
+      await driveToTest(harness, run);
+      writeArtifact(harness, run, "test-report.md", footer(["RESULT: PASS", "COMMAND: bun test", "EXIT: 0"]));
+      expect(await call(harness, "team_advance", { run }))
+        .toMatchObject({ ok: true, from: "test", to: "qa" });
+
+      const inQa = await call(harness, "team_status", { run });
+      expect(inQa.gate).toMatchObject({ ok: false, code: "missing_artifact", artifact: "qa.md" });
+      expect(inQa.gate).not.toHaveProperty("members");
+      expect(inQa.review_wave).toMatchObject({ enabled: false, active: false, members: [] });
+      expect(inQa.next_action.toLowerCase()).toContain("skip");
+      expect(inQa.next_action).toContain("adversary");
+
+      writeArtifact(harness, run, "qa.md", footer(["VERDICT: PASS"]));
+      const toDocs = await call(harness, "team_advance", { run });
+      expect(toDocs).toMatchObject({ ok: true, from: "qa", to: "docs", skipped: ["adversary"] });
+      expect(await transitionTargets(harness, run)).toEqual([
+        "brainstorm",
+        "spec",
+        "plan",
+        "implement",
+        "test",
+        "qa",
+        "docs",
+      ]);
+      expect((await runEvents(harness, run)).filter((event) => event.kind.startsWith("review.wave."))).toEqual([]);
+    });
+
+    test(`skips a disabled qa and advances test -> adversary -> docs (${label})`, async () => {
+      const harness = await setup({ config: makeConfig(["qa"]) });
+      const run = (await call(harness, "team_start", { title: "No qa" })).run as string;
+      await driveToTest(harness, run);
+      writeArtifact(harness, run, "test-report.md", footer(["RESULT: PASS", "COMMAND: bun test", "EXIT: 0"]));
+
+      const atTest = await call(harness, "team_status", { run });
+      expect(atTest.gate).toMatchObject({ ok: true, artifact: "test-report.md" });
+      expect(atTest.next_action.toLowerCase()).toContain("skip");
+      expect(atTest.next_action).toContain("qa");
+      expect(atTest.next_action).toContain("adversary");
+
+      const toAdversary = await call(harness, "team_advance", { run });
+      expect(toAdversary).toMatchObject({ ok: true, from: "test", to: "adversary", skipped: ["qa"] });
+      const inAdversary = await call(harness, "team_status", { run });
+      expect(inAdversary.gate).toMatchObject({ ok: false, code: "missing_artifact", artifact: "adversary.md" });
+      expect(inAdversary.gate).not.toHaveProperty("members");
+      expect(inAdversary.review_wave).toMatchObject({ enabled: false, active: false, members: [] });
+
+      writeArtifact(harness, run, "adversary.md", footer(["BLOCKERS: 0"]));
+      const toDocs = await call(harness, "team_advance", { run });
+      expect(toDocs).toMatchObject({ ok: true, from: "adversary", to: "docs" });
+      expect(toDocs.skipped).toBeUndefined();
+      expect(await transitionTargets(harness, run)).toEqual([
+        "brainstorm",
+        "spec",
+        "plan",
+        "implement",
+        "test",
+        "adversary",
+        "docs",
+      ]);
+    });
+
+    test(`skips both disabled review roles and advances test -> docs (${label})`, async () => {
+      const harness = await setup({ config: makeConfig(["qa", "adversary"]) });
+      const run = (await call(harness, "team_start", { title: "No review roles" })).run as string;
+      await driveToTest(harness, run);
+      writeArtifact(harness, run, "test-report.md", footer(["RESULT: PASS", "COMMAND: bun test", "EXIT: 0"]));
+
+      const atTest = await call(harness, "team_status", { run });
+      expect(atTest.gate).toMatchObject({ ok: true, artifact: "test-report.md" });
+      expect(atTest.next_action.toLowerCase()).toContain("skip");
+      expect(atTest.next_action).toContain("qa");
+      expect(atTest.next_action).toContain("adversary");
+
+      const toDocs = await call(harness, "team_advance", { run });
+      expect(toDocs).toMatchObject({
+        ok: true,
+        from: "test",
+        to: "docs",
+        phase: "docs",
+        skipped: ["qa", "adversary"],
+      });
+      expect(await transitionTargets(harness, run)).toEqual([
+        "brainstorm",
+        "spec",
+        "plan",
+        "implement",
+        "test",
+        "docs",
+      ]);
+      const inDocs = await call(harness, "team_status", { run });
+      expect(inDocs.gate).toMatchObject({ ok: false, code: "missing_artifact", artifact: "docs.md" });
+      expect(inDocs.review_wave).toMatchObject({ enabled: false, active: false, members: [] });
+    });
+
+    test(`rejects rewinds to a disabled review role before state or loop changes (${label})`, async () => {
+      const adversaryDisabled = await setup({ config: makeConfig(["adversary"]) });
+      const adversaryRun = (await call(adversaryDisabled, "team_start", { title: "Rewind adversary" })).run as string;
+      await driveToQa(adversaryDisabled, adversaryRun);
+      const blockedAdversary = await call(adversaryDisabled, "team_rewind", {
+        run: adversaryRun,
+        to: "adversary",
+        reason: "inspect adversary",
+      });
+      expect(blockedAdversary).toMatchObject({ ok: false, code: "review_role_disabled" });
+      expect(blockedAdversary.error).toContain("adversary");
+      expect(blockedAdversary.error).toContain("disabled");
+      expect((await readRun(adversaryDisabled, adversaryRun))?.phase).toBe("qa");
+      expect(await loopCounts(adversaryDisabled, adversaryRun)).toEqual({});
+
+      const qaDisabled = await setup({ config: makeConfig(["qa"]) });
+      const qaRun = (await call(qaDisabled, "team_start", { title: "Rewind qa" })).run as string;
+      await driveToTest(qaDisabled, qaRun);
+      writeArtifact(qaDisabled, qaRun, "test-report.md", footer(["RESULT: PASS", "COMMAND: bun test", "EXIT: 0"]));
+      expect(await call(qaDisabled, "team_advance", { run: qaRun }))
+        .toMatchObject({ ok: true, to: "adversary" });
+      const blockedQa = await call(qaDisabled, "team_rewind", {
+        run: qaRun,
+        to: "qa",
+        reason: "inspect qa",
+      });
+      expect(blockedQa).toMatchObject({ ok: false, code: "review_role_disabled" });
+      expect(blockedQa.error).toContain("qa");
+      expect(blockedQa.error).toContain("disabled");
+      expect((await readRun(qaDisabled, qaRun))?.phase).toBe("adversary");
+      expect(await loopCounts(qaDisabled, qaRun)).toEqual({});
+    });
+  }
 });
 
 describe("run resolution and stack tools", () => {

@@ -1,7 +1,14 @@
 import { validatePhaseGate, type GateResult } from "../state/artifacts";
-import { PHASE_OWNERS } from "../state/phases";
+import {
+  PHASE_OWNERS,
+  isReviewPhase,
+  isReviewPhaseDisabled,
+  nextAdvanceTarget,
+  type ReviewPhase,
+} from "../state/phases";
 import {
   REVIEW_MEMBERS,
+  disabledReviewGate,
   evaluateReviewBarrier,
   reviewWaveStatus,
   serializeGateResult,
@@ -12,6 +19,7 @@ import {
   type ReviewWaveStatus,
 } from "../state/reviews";
 import { parseJsonRecord, type LoopRow, type RunRow, type ToolCallRow } from "../state/runs";
+import type { RoleId } from "../roles";
 import { StackService } from "../stack/service";
 import {
   defineTeamTool,
@@ -72,6 +80,7 @@ export function createStatusTool(runtime: ToolRuntime) {
       };
       const profile = stackService(runtime).resolveForRun(run, false).profile;
       const enabled = runtime.config.reviews.parallel;
+      const disabledRoles = runtime.config.roles.disabled;
       const barrier = enabled && run.status === "open" && run.phase === "qa"
         ? evaluateReviewBarrier({
             rootDir: runtime.config.rootDir,
@@ -80,13 +89,15 @@ export function createStatusTool(runtime: ToolRuntime) {
             notes,
           })
         : undefined;
-      const gate = barrier ?? validatePhaseGate({
-        phase: run.phase,
-        rootDir: runtime.config.rootDir,
-        runId: run.id,
-        profile,
-        notes,
-      });
+      const gate = barrier ?? (isReviewPhaseDisabled(run.phase, disabledRoles) && isReviewPhase(run.phase)
+        ? disabledReviewGate(run.phase)
+        : validatePhaseGate({
+            phase: run.phase,
+            rootDir: runtime.config.rootDir,
+            runId: run.id,
+            profile,
+            notes,
+          }));
       const memberLoops = reviewMemberLoops(loops, maxLoops);
       const reviewWave = reviewWaveStatus({
         enabled,
@@ -104,7 +115,7 @@ export function createStatusTool(runtime: ToolRuntime) {
       const loopSummary = loopCounts(loops.filter((loop) => loop.role === ""));
       const roleLoops = roleLoopSummary(loops, maxLoops);
       const owner = PHASE_OWNERS[run.phase];
-      const nextAction = nextActionFor(run, gate, owner, barrier);
+      const nextAction = nextActionFor(run, gate, owner, barrier, disabledRoles);
       const waveLine = enabled ? renderWaveLine(reviewWave) : undefined;
 
       return ok(
@@ -185,7 +196,8 @@ function nextActionFor(
   run: RunRow,
   gate: GateResult,
   owner: string | null,
-  barrier?: ReviewBarrierResult,
+  barrier: ReviewBarrierResult | undefined,
+  disabled: readonly RoleId[],
 ): string {
   if (run.status !== "open") return "The run is not open; inspect the status or start a new run.";
   if (run.phase === "done") return "The run is done and terminal.";
@@ -203,11 +215,27 @@ function nextActionFor(
       .join(" / ");
     return `Review wave not ready: ${failing} still failing. Re-dispatch those reviewers concurrently or sequentially in qa and use ${retryRoles} for retries; team_advance moves qa -> docs only after both artifacts pass.`;
   }
-  if (gate.ok) return "Call team_advance to move to the next phase.";
-  if (run.phase === "plan") {
-    return `${gate.message} Re-dispatch the spec subagent to write plan.md; never use the built-in plan agent.`;
+
+  const target = nextAdvanceTarget(run.phase, disabled);
+  const skipped = target?.skipped ?? [];
+  const skipNote = skipped.length > 0 && target
+    ? ` The next advance skips ${formatReviewPhases(skipped)} (disabled) and moves ${run.phase} -> ${target.target}; do not request an artifact from a disabled reviewer.`
+    : "";
+
+  if (isReviewPhaseDisabled(run.phase, disabled)) {
+    return target
+      ? `The ${run.phase} review role is disabled; no review artifact is required. Call team_advance to skip ${run.phase} and move to ${target.target}.`
+      : "The disabled review phase has no next phase; inspect the status.";
   }
-  return owner ? `${gate.message} Owner: ${owner}.` : gate.message;
+  if (gate.ok) return `Call team_advance to move to the next phase.${skipNote}`;
+  if (run.phase === "plan") {
+    return `${gate.message} Re-dispatch the spec subagent to write plan.md; never use the built-in plan agent.${skipNote}`;
+  }
+  return owner ? `${gate.message} Owner: ${owner}.${skipNote}` : `${gate.message}${skipNote}`;
+}
+
+function formatReviewPhases(phases: readonly ReviewPhase[]): string {
+  return phases.length === 1 ? phases[0]! : phases.join(" and ");
 }
 
 function renderWaveLine(status: ReviewWaveStatus): string {

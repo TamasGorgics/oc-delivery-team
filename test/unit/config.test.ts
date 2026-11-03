@@ -218,6 +218,20 @@ describe("plugin configuration", () => {
     expect(explicitFalse.warnings.filter((warning) => warning.path === "reviews.parallel")).toEqual([]);
   });
 
+  test("emits one reviews.parallel warning when an invalid value also degrades for disabled reviewers", () => {
+    const config = parseConfig({
+      roles: { disabled: ["adversary"] },
+      reviews: { parallel: "yes" },
+    }, "/workspace/project");
+
+    expect(config.reviews).toEqual({ parallel: false });
+    const warnings = config.warnings.filter((warning) => warning.path === "reviews.parallel");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toContain("Must be a boolean");
+    expect(warnings[0]?.message).toContain("adversary");
+    expect(warnings[0]?.message).toContain("reviews.parallel=false");
+  });
+
   test("accepts absolute roots and tolerates non-object plugin options", () => {
     const absolute = parseConfig({ root: "/var/lib/team", dbPath: "/var/lib/team/state.db" }, "/project");
     expect(absolute.rootDir).toBe("/var/lib/team");

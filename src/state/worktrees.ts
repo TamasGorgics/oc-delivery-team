@@ -87,8 +87,15 @@ export function createTeamWorktree(input: {
     stdio: ["ignore", "pipe", "pipe"],
   });
   if (result.error) {
-    const code = "code" in result.error && result.error.code === "ENOENT" ? "git_unavailable" : "git_failed";
-    throw new WorktreeError(`Could not run git worktree add: ${errorMessage(result.error)}`, code);
+    const unavailable = "code" in result.error && result.error.code === "ENOENT";
+    const code = unavailable ? "git_unavailable" : "git_failed";
+    const message = `Could not run git worktree add: ${errorMessage(result.error)}`;
+    throw new WorktreeError(
+      unavailable
+        ? `${message}. Worktrees require a Git repository; continue sequentially in the main checkout and do not retry team_worktree.`
+        : message,
+      code,
+    );
   }
   if (result.status !== 0) {
     const detail = (result.stderr || result.stdout || "Git exited without a diagnostic.").trim();

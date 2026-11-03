@@ -153,14 +153,20 @@ export function parseConfig(
 
   const reviewsRaw = readObject(options.reviews, "reviews", warnings);
   warnUnknown(reviewsRaw, REVIEWS_KEYS, "reviews", warnings);
-  const requestedParallel = readBoolean(reviewsRaw.parallel, true, "reviews.parallel", warnings);
+  const parallelRaw = reviewsRaw.parallel;
+  const invalidParallel = parallelRaw !== undefined && typeof parallelRaw !== "boolean";
+  const requestedParallel = typeof parallelRaw === "boolean" ? parallelRaw : true;
   const missingReviewRoles = (["qa", "adversary"] as const).filter((role) => disabled.includes(role));
   const parallel = requestedParallel && missingReviewRoles.length === 0;
   if (requestedParallel && missingReviewRoles.length > 0) {
     warnings.push({
       path: "reviews.parallel",
-      message: `Requires the qa and adversary roles; the review wave is disabled because ${missingReviewRoles.join(", ")} disabled. Set reviews.parallel=false to run sequential reviews.`,
+      message: invalidParallel
+        ? `Must be a boolean; using default. The review wave is also disabled because ${missingReviewRoles.join(", ")} disabled. Set reviews.parallel=false to run sequential reviews.`
+        : `Requires the qa and adversary roles; the review wave is disabled because ${missingReviewRoles.join(", ")} disabled. Set reviews.parallel=false to run sequential reviews.`,
     });
+  } else if (invalidParallel) {
+    warnings.push({ path: "reviews.parallel", message: "Must be a boolean; using default." });
   }
 
   const gatingRaw = readObject(options.gating, "gating", warnings);
