@@ -4,6 +4,8 @@ export interface Migration {
   readonly version: number;
   readonly name: string;
   readonly statements: readonly string[];
+  /** Optional schema assertion executed inside the migration transaction. */
+  readonly verify?: (db: TeamDatabase) => void;
 }
 
 export const MIGRATION_1_STATEMENTS: readonly string[] = [
@@ -86,10 +88,63 @@ export const MIGRATION_2_STATEMENTS: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS idx_prompt_versions_role_status ON prompt_versions(role, status)`,
 ];
 
+export const MIGRATION_3_STATEMENTS: readonly string[] = [
+  `DROP TABLE IF EXISTS loops_v3`,
+  `CREATE TABLE loops_v3 (
+    run_id TEXT NOT NULL REFERENCES runs(id),
+    phase TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT '',
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (run_id, phase, role)
+  )`,
+  `INSERT INTO loops_v3 (run_id, phase, role, count)
+    SELECT run_id, phase, '', COALESCE(SUM(count), 0)
+    FROM loops
+    GROUP BY run_id, phase`,
+  `DROP TABLE loops`,
+  `ALTER TABLE loops_v3 RENAME TO loops`,
+];
+
+export const MIGRATION_3: Migration = {
+  version: 3,
+  name: "loops role scope",
+  statements: MIGRATION_3_STATEMENTS,
+  verify: verifyLoopsRoleScope,
+};
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "initial", statements: MIGRATION_1_STATEMENTS },
   { version: 2, name: "learning indexes", statements: MIGRATION_2_STATEMENTS },
+  MIGRATION_3,
 ];
+
+function verifyLoopsRoleScope(db: TeamDatabase): void {
+  const columns = db.all<{ name: string; notnull: number; pk: number }>("PRAGMA table_info(loops)");
+  const byName = new Map(columns.map((column) => [column.name, column]));
+  for (const required of ["run_id", "phase", "role", "count"]) {
+    if (!byName.has(required)) {
+      throw new Error(`Migration 3 verification failed: loops is missing the '${required}' column.`);
+    }
+  }
+
+  const primaryKey = columns
+    .filter((column) => Number(column.pk) > 0)
+    .sort((left, right) => Number(left.pk) - Number(right.pk))
+    .map((column) => column.name);
+  const expectedPrimaryKey = ["run_id", "phase", "role"];
+  if (
+    primaryKey.length !== expectedPrimaryKey.length
+    || primaryKey.some((column, index) => column !== expectedPrimaryKey[index])
+  ) {
+    throw new Error(
+      `Migration 3 verification failed: loops primary key is (${primaryKey.join(", ") || "none"}) instead of (run_id, phase, role).`,
+    );
+  }
+
+  if (Number(byName.get("role")?.notnull) !== 1) {
+    throw new Error("Migration 3 verification failed: loops.role must be NOT NULL.");
+  }
+}
 
 export interface MigrationResult {
   readonly fromVersion: number;
@@ -111,16 +166,27 @@ export function migrate(db: TeamDatabase, migrations: readonly Migration[] = MIG
 
   for (const migration of [...migrations].sort((a, b) => a.version - b.version)) {
     if (applied.has(migration.version)) continue;
-    db.transaction(() => {
-      for (const statement of migration.statements) db.exec(statement);
-      db.run(
+    const didApply = db.transaction((tx) => {
+      // Another process may have applied this migration while this connection
+      // waited for the BEGIN IMMEDIATE write lock. Re-check before mutating.
+      const alreadyApplied = tx.get<{ found: number }>(
+        "SELECT 1 AS found FROM schema_migrations WHERE version = ?",
+        [migration.version],
+      );
+      if (alreadyApplied) return false;
+
+      for (const statement of migration.statements) tx.exec(statement);
+      migration.verify?.(tx);
+      tx.run(
         "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
         [migration.version, migration.name, new Date().toISOString()],
       );
+      return true;
     });
-    newlyApplied.push(migration.version);
+    if (didApply) newlyApplied.push(migration.version);
   }
 
-  const toVersion = newlyApplied.length > 0 ? Math.max(...newlyApplied) : fromVersion;
+  const maxRow = db.get<{ version: number | null }>("SELECT MAX(version) AS version FROM schema_migrations");
+  const toVersion = maxRow?.version == null ? 0 : Number(maxRow.version);
   return { fromVersion, toVersion, applied: newlyApplied };
 }

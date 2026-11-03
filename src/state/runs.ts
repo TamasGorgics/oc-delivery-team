@@ -75,6 +75,8 @@ export interface MessageTotals {
 export interface LoopRow {
   readonly run_id: string;
   readonly phase: Phase;
+  /** Empty string is the phase (or wave) scope; reviewer roles scope member retries. */
+  readonly role: string;
   readonly count: number;
 }
 
@@ -207,25 +209,49 @@ export class RunRepository {
     )?.at;
   }
 
-  getLoops(runId: string): LoopRow[] {
-    return this.db.all<LoopRow>("SELECT * FROM loops WHERE run_id = ? ORDER BY phase", [runId]);
+  getLoops(runId: string, role?: string): LoopRow[] {
+    if (role === undefined) {
+      return this.db.all<LoopRow>(
+        "SELECT * FROM loops WHERE run_id = ? ORDER BY phase, role",
+        [runId],
+      );
+    }
+    return this.db.all<LoopRow>(
+      "SELECT * FROM loops WHERE run_id = ? AND role = ? ORDER BY phase, role",
+      [runId, role],
+    );
   }
 
-  getLoop(runId: string, phase: Phase): number {
+  getLoop(runId: string, phase: Phase, role = ""): number {
     const row = this.db.get<{ count: number }>(
-      "SELECT count FROM loops WHERE run_id = ? AND phase = ?",
-      [runId, phase],
+      "SELECT count FROM loops WHERE run_id = ? AND phase = ? AND role = ?",
+      [runId, phase, role],
     );
     return row ? Number(row.count) : 0;
   }
 
-  incrementLoop(runId: string, phase: Phase): number {
-    this.db.run(
-      `INSERT INTO loops (run_id, phase, count) VALUES (?, ?, 1)
-       ON CONFLICT(run_id, phase) DO UPDATE SET count = count + 1`,
+  incrementLoop(runId: string, phase: Phase, role = ""): number {
+    return this.db.transaction((tx) => {
+      tx.run(
+        `INSERT INTO loops (run_id, phase, role, count) VALUES (?, ?, ?, 1)
+         ON CONFLICT(run_id, phase, role) DO UPDATE SET count = loops.count + 1`,
+        [runId, phase, role],
+      );
+      const row = tx.get<{ count: number }>(
+        "SELECT count FROM loops WHERE run_id = ? AND phase = ? AND role = ?",
+        [runId, phase, role],
+      );
+      return row ? Number(row.count) : 0;
+    });
+  }
+
+  countPhaseEntries(runId: string, phase: Phase): number {
+    const row = this.db.get<{ count: number }>(
+      `SELECT COUNT(*) AS count FROM phase_transitions
+       WHERE run_id = ? AND to_phase = ? AND kind IN ('advance', 'rewind')`,
       [runId, phase],
     );
-    return this.getLoop(runId, phase);
+    return row ? Number(row.count) : 0;
   }
 
   addNote(input: {

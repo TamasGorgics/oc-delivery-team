@@ -29,12 +29,12 @@ function insertRun(db: TeamDatabase, id = "run-1"): void {
 }
 
 describe("database adapter and migrations", () => {
-  test("fresh install applies migrations 1 and 2 and configures WAL, timeout, and foreign keys", async () => {
+  test("fresh install applies migrations 1, 2, and 3 and configures WAL, timeout, and foreign keys", async () => {
     const dbPath = tempDb();
     const { db, migration } = await openDatabase(dbPath);
     try {
       expect(db.driver).toBe("bun:sqlite");
-      expect(migration).toEqual({ fromVersion: 0, toVersion: 2, applied: [1, 2] });
+      expect(migration).toEqual({ fromVersion: 0, toVersion: 3, applied: [1, 2, 3] });
       expect(db.get<{ journal_mode: string }>("PRAGMA journal_mode")?.journal_mode).toBe("wal");
       expect(db.get<{ timeout: number }>("PRAGMA busy_timeout")?.timeout).toBe(5000);
       expect(db.get<{ foreign_keys: number }>("PRAGMA foreign_keys")?.foreign_keys).toBe(1);
@@ -65,6 +65,7 @@ describe("database adapter and migrations", () => {
       ).toEqual([
         { version: 1, name: "initial" },
         { version: 2, name: "learning indexes" },
+        { version: 3, name: "loops role scope" },
       ]);
     } finally {
       db.close();
@@ -76,20 +77,20 @@ describe("database adapter and migrations", () => {
     (await openDatabase(dbPath)).db.close();
     const { db, migration } = await openDatabase(dbPath);
     try {
-      expect(migration).toEqual({ fromVersion: 2, toVersion: 2, applied: [] });
+      expect(migration).toEqual({ fromVersion: 3, toVersion: 3, applied: [] });
     } finally {
       db.close();
     }
   });
 
-  test("upgrades a version-1 database with the M5 learning indexes", async () => {
+  test("upgrades a version-1 database with the M5 learning indexes and M8 loops", async () => {
     const dbPath = tempDb();
     const versionOne = await openDatabase(dbPath, { migrations: [MIGRATIONS[0]] });
     versionOne.db.close();
 
     const upgraded = await openDatabase(dbPath);
     try {
-      expect(upgraded.migration).toEqual({ fromVersion: 1, toVersion: 2, applied: [2] });
+      expect(upgraded.migration).toEqual({ fromVersion: 1, toVersion: 3, applied: [2, 3] });
       const indexes = new Set(
         upgraded.db
           .all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'index'")
@@ -98,6 +99,8 @@ describe("database adapter and migrations", () => {
       expect(indexes.has("idx_lessons_status_role_stack")).toBe(true);
       expect(indexes.has("idx_lessons_source_run")).toBe(true);
       expect(indexes.has("idx_prompt_versions_role_status")).toBe(true);
+      expect(upgraded.db.all<{ name: string }>("PRAGMA table_info(loops)").map((row) => row.name))
+        .toEqual(["run_id", "phase", "role", "count"]);
     } finally {
       upgraded.db.close();
     }
@@ -107,32 +110,164 @@ describe("database adapter and migrations", () => {
     const dbPath = tempDb();
     (await openDatabase(dbPath)).db.close();
 
-    const migration3: Migration = {
-      version: 3,
+    const migration4: Migration = {
+      version: 4,
       name: "add-test-table",
       statements: ["CREATE TABLE upgrade_probe (id INTEGER PRIMARY KEY, value TEXT)"],
     };
-    const migration4: Migration = {
-      version: 4,
+    const migration5: Migration = {
+      version: 5,
       name: "add-second-table",
       statements: ["CREATE TABLE upgrade_probe_2 (id INTEGER PRIMARY KEY)"],
     };
 
     const upgraded = await openDatabase(dbPath, {
-      migrations: [...MIGRATIONS, migration3, migration4],
+      migrations: [...MIGRATIONS, migration4, migration5],
     });
     try {
-      expect(upgraded.migration).toEqual({ fromVersion: 2, toVersion: 4, applied: [3, 4] });
+      expect(upgraded.migration).toEqual({ fromVersion: 3, toVersion: 5, applied: [4, 5] });
       expect(
         upgraded.db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version").map((row) => row.version),
-      ).toEqual([1, 2, 3, 4]);
+      ).toEqual([1, 2, 3, 4, 5]);
     } finally {
       upgraded.db.close();
     }
 
-    const reopened = await openDatabase(dbPath, { migrations: [...MIGRATIONS, migration3, migration4] });
+    const reopened = await openDatabase(dbPath, { migrations: [...MIGRATIONS, migration4, migration5] });
     try {
-      expect(reopened.migration).toEqual({ fromVersion: 4, toVersion: 4, applied: [] });
+      expect(reopened.migration).toEqual({ fromVersion: 5, toVersion: 5, applied: [] });
+    } finally {
+      reopened.db.close();
+    }
+  });
+
+  test("migration 3 preserves version-1 loop counts with the phase-scoped role", async () => {
+    const dbPath = tempDb();
+    const versionOne = await openDatabase(dbPath, { migrations: [MIGRATIONS[0]] });
+    try {
+      insertRun(versionOne.db);
+      versionOne.db.run("INSERT INTO loops (run_id, phase, count) VALUES (?, ?, ?)", ["run-1", "implement", 2]);
+      versionOne.db.run("INSERT INTO loops (run_id, phase, count) VALUES (?, ?, ?)", ["run-1", "test", 1]);
+    } finally {
+      versionOne.db.close();
+    }
+
+    const upgraded = await openDatabase(dbPath);
+    try {
+      expect(upgraded.migration).toEqual({ fromVersion: 1, toVersion: 3, applied: [2, 3] });
+      const runs = new RunRepository(upgraded.db);
+      expect(runs.getLoops("run-1")).toEqual([
+        { run_id: "run-1", phase: "implement", role: "", count: 2 },
+        { run_id: "run-1", phase: "test", role: "", count: 1 },
+      ]);
+      expect(runs.countPhaseEntries("run-1", "qa")).toBe(0);
+    } finally {
+      upgraded.db.close();
+    }
+  });
+
+  test("migration 3 adds role scope and keeps version-2 counts", async () => {
+    const dbPath = tempDb();
+    const versionTwo = await openDatabase(dbPath, { migrations: [MIGRATIONS[0], MIGRATIONS[1]] });
+    try {
+      insertRun(versionTwo.db);
+      versionTwo.db.run("INSERT INTO loops (run_id, phase, count) VALUES (?, ?, ?)", ["run-1", "qa", 2]);
+    } finally {
+      versionTwo.db.close();
+    }
+
+    const upgraded = await openDatabase(dbPath);
+    try {
+      expect(upgraded.migration).toEqual({ fromVersion: 2, toVersion: 3, applied: [3] });
+      const runs = new RunRepository(upgraded.db);
+      expect(runs.getLoop("run-1", "qa")).toBe(2);
+      expect(runs.incrementLoop("run-1", "qa", "qa")).toBe(1);
+      expect(runs.incrementLoop("run-1", "qa", "qa")).toBe(2);
+      expect(runs.incrementLoop("run-1", "qa", "adversary")).toBe(1);
+      expect(runs.getLoop("run-1", "qa")).toBe(2);
+      expect(runs.getLoop("run-1", "qa", "qa")).toBe(2);
+      expect(runs.getLoop("run-1", "qa", "adversary")).toBe(1);
+      expect(runs.getLoops("run-1", "qa")).toEqual([
+        { run_id: "run-1", phase: "qa", role: "qa", count: 2 },
+      ]);
+    } finally {
+      upgraded.db.close();
+    }
+  });
+
+  test("migration 3 rebuilds a drifted loops table with no primary key and duplicate rows", async () => {
+    const dbPath = tempDb();
+    (await openDatabase(dbPath, { migrations: [MIGRATIONS[0], MIGRATIONS[1]] })).db.close();
+
+    const raw = await openDatabase(dbPath, { migrate: false });
+    try {
+      insertRun(raw.db);
+      raw.db.exec("DROP TABLE loops");
+      raw.db.exec(
+        "CREATE TABLE loops (run_id TEXT NOT NULL, phase TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0)",
+      );
+      raw.db.run("INSERT INTO loops (run_id, phase, count) VALUES (?, ?, ?)", ["run-1", "qa", 1]);
+      raw.db.run("INSERT INTO loops (run_id, phase, count) VALUES (?, ?, ?)", ["run-1", "qa", 2]);
+      raw.db.run("INSERT INTO loops (run_id, phase, count) VALUES (?, ?, ?)", ["run-1", "implement", 4]);
+    } finally {
+      raw.db.close();
+    }
+
+    const upgraded = await openDatabase(dbPath);
+    try {
+      expect(upgraded.migration).toEqual({ fromVersion: 2, toVersion: 3, applied: [3] });
+      const primaryKey = upgraded.db
+        .all<{ name: string; pk: number }>("PRAGMA table_info(loops)")
+        .filter((column) => Number(column.pk) > 0)
+        .sort((left, right) => Number(left.pk) - Number(right.pk))
+        .map((column) => column.name);
+      expect(primaryKey).toEqual(["run_id", "phase", "role"]);
+
+      const runs = new RunRepository(upgraded.db);
+      expect(runs.getLoop("run-1", "qa")).toBe(3);
+      expect(runs.getLoop("run-1", "implement")).toBe(4);
+      expect(runs.incrementLoop("run-1", "qa")).toBe(4);
+      expect(runs.incrementLoop("run-1", "qa", "qa")).toBe(1);
+      expect(runs.getLoops("run-1")).toEqual([
+        { run_id: "run-1", phase: "implement", role: "", count: 4 },
+        { run_id: "run-1", phase: "qa", role: "", count: 4 },
+        { run_id: "run-1", phase: "qa", role: "qa", count: 1 },
+      ]);
+    } finally {
+      upgraded.db.close();
+    }
+
+    const reopened = await openDatabase(dbPath);
+    try {
+      expect(reopened.migration).toEqual({ fromVersion: 3, toVersion: 3, applied: [] });
+      const runs = new RunRepository(reopened.db);
+      expect(runs.getLoop("run-1", "qa")).toBe(4);
+      expect(runs.getLoop("run-1", "qa", "qa")).toBe(1);
+    } finally {
+      reopened.db.close();
+    }
+  });
+
+  test("rolls back a migration whose verify fails and does not record the version", async () => {
+    const dbPath = tempDb();
+    const failing: Migration = {
+      version: 4,
+      name: "failing verification",
+      statements: ["CREATE TABLE migration_probe (id INTEGER PRIMARY KEY)"],
+      verify: () => {
+        throw new Error("verification failed");
+      },
+    };
+
+    await expect(openDatabase(dbPath, { migrations: [...MIGRATIONS, failing] }))
+      .rejects.toThrow("verification failed");
+
+    const reopened = await openDatabase(dbPath);
+    try {
+      expect(reopened.migration).toEqual({ fromVersion: 3, toVersion: 3, applied: [] });
+      expect(
+        reopened.db.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'migration_probe'"),
+      ).toBeUndefined();
     } finally {
       reopened.db.close();
     }
@@ -313,11 +448,15 @@ describe("run repositories", () => {
       runs.addTransition({ runId: "run-1", from: "brainstorm", to: "spec", kind: "advance" });
       expect(runs.getPhaseStartedAt("run-1")).toBe("2026-01-01T00:00:00.000Z");
       expect(runs.getTransitions("run-1")).toHaveLength(2);
+      expect(runs.countPhaseEntries("run-1", "spec")).toBe(1);
+      expect(runs.countPhaseEntries("run-1", "qa")).toBe(0);
 
       expect(runs.getLoop("run-1", "implement")).toBe(0);
       expect(runs.incrementLoop("run-1", "implement")).toBe(1);
       expect(runs.incrementLoop("run-1", "implement")).toBe(2);
-      expect(runs.getLoops("run-1")).toEqual([{ run_id: "run-1", phase: "implement", count: 2 }]);
+      expect(runs.getLoops("run-1")).toEqual([
+        { run_id: "run-1", phase: "implement", role: "", count: 2 },
+      ]);
 
       runs.addNote({
         runId: "run-1",

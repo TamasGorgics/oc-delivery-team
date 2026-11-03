@@ -43,6 +43,10 @@ export interface RolesConfig {
   readonly disabled: readonly RoleId[];
 }
 
+export interface ReviewsConfig {
+  readonly parallel: boolean;
+}
+
 export interface GatingConfig {
   readonly enabled: boolean;
   readonly strict: boolean;
@@ -71,6 +75,7 @@ export interface DeliveryTeamConfig {
   readonly models: ModelsConfig;
   readonly stack: StackConfig;
   readonly roles: RolesConfig;
+  readonly reviews: ReviewsConfig;
   readonly gating: GatingConfig;
   readonly trace: TraceConfig;
   readonly worktrees: WorktreesConfig;
@@ -85,6 +90,7 @@ const TOP_LEVEL_KEYS = new Set([
   "models",
   "stack",
   "roles",
+  "reviews",
   "gating",
   "trace",
   "worktrees",
@@ -93,6 +99,7 @@ const TOP_LEVEL_KEYS = new Set([
 const LESSONS_KEYS = new Set(["topN", "budgetChars"]);
 const STACK_KEYS = new Set(["detect", "overrides"]);
 const ROLES_KEYS = new Set(["disabled"]);
+const REVIEWS_KEYS = new Set(["parallel"]);
 const GATING_KEYS = new Set(["enabled", "strict", "editTools", "pathKeys"]);
 const TRACE_KEYS = new Set(["captureInput", "previewChars"]);
 const WORKTREES_KEYS = new Set(["enabled", "baseDir"]);
@@ -144,6 +151,18 @@ export function parseConfig(
   warnUnknown(rolesRaw, ROLES_KEYS, "roles", warnings);
   const disabled = readRoleList(rolesRaw.disabled, warnings);
 
+  const reviewsRaw = readObject(options.reviews, "reviews", warnings);
+  warnUnknown(reviewsRaw, REVIEWS_KEYS, "reviews", warnings);
+  const requestedParallel = readBoolean(reviewsRaw.parallel, false, "reviews.parallel", warnings);
+  const missingReviewRoles = (["qa", "adversary"] as const).filter((role) => disabled.includes(role));
+  const parallel = requestedParallel && missingReviewRoles.length === 0;
+  if (requestedParallel && missingReviewRoles.length > 0) {
+    warnings.push({
+      path: "reviews.parallel",
+      message: `Requires the qa and adversary roles; the review wave is disabled because ${missingReviewRoles.join(", ")} disabled.`,
+    });
+  }
+
   const gatingRaw = readObject(options.gating, "gating", warnings);
   warnUnknown(gatingRaw, GATING_KEYS, "gating", warnings);
   const gating: GatingConfig = {
@@ -177,6 +196,7 @@ export function parseConfig(
     models: parseModels(options.models, warnings),
     stack,
     roles: { disabled },
+    reviews: { parallel },
     gating,
     trace,
     worktrees,

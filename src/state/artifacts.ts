@@ -30,6 +30,16 @@ export type GateCode =
   | "verdict_not_pass"
   | "blockers";
 
+export interface GateMemberResult {
+  readonly role: string;
+  readonly ok: boolean;
+  readonly code: GateCode;
+  readonly message: string;
+  readonly artifact: string;
+  readonly artifact_path: string;
+  readonly footer?: FooterParseResult;
+}
+
 export interface GateResult {
   readonly ok: boolean;
   readonly code: GateCode;
@@ -37,6 +47,8 @@ export interface GateResult {
   readonly artifact: string;
   readonly artifactPath: string;
   readonly footer?: FooterParseResult;
+  /** Present when the gate is a multi-member review barrier. */
+  readonly members?: readonly GateMemberResult[];
 }
 
 export const PHASE_ARTIFACTS: Readonly<Record<ArtifactPhase, string>> = {

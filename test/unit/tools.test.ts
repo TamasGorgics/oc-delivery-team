@@ -118,7 +118,7 @@ describe("tool registration and team_start", () => {
       path: path.join(harness.rootDir, "team.db"),
       driver: "bun:sqlite",
       status: "ready",
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
     expect(Object.keys(snapshot?.models.roles ?? {})).toHaveLength(9);
   });
