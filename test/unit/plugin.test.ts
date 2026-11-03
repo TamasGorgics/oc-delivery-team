@@ -14,6 +14,19 @@ import { createFakeContext, fakeModel } from "../fakes/ctx";
 
 const temporaryDirectories: string[] = [];
 
+const EXPECTED_TOOL_NAMES = [
+  "team_advance",
+  "team_lesson_propose",
+  "team_loop",
+  "team_note",
+  "team_rewind",
+  "team_stack",
+  "team_stack_update",
+  "team_start",
+  "team_status",
+  "team_worktree",
+] as const;
+
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
@@ -74,6 +87,7 @@ describe("delivery-team plugin registration", () => {
 
     expect(defaultFake.state.tools.has("team_worktree")).toBe(true);
     expect(defaultFake.state.tools.size).toBe(10);
+    expect([...defaultFake.state.tools.keys()].sort()).toEqual([...EXPECTED_TOOL_NAMES]);
     for (const role of waveRoles) {
       expect(defaultFake.state.agents.get(role)?.system).toContain(REVIEW_WAVE_HEADING);
     }
@@ -89,18 +103,7 @@ describe("delivery-team plugin registration", () => {
     const enabledCleanup = await deliveryTeam.setup(enabledFake.context);
     assertCleanup(enabledCleanup);
 
-    expect([...enabledFake.state.tools.keys()].sort()).toEqual([
-      "team_advance",
-      "team_lesson_propose",
-      "team_loop",
-      "team_note",
-      "team_rewind",
-      "team_stack",
-      "team_stack_update",
-      "team_start",
-      "team_status",
-      "team_worktree",
-    ]);
+    expect([...enabledFake.state.tools.keys()].sort()).toEqual([...EXPECTED_TOOL_NAMES]);
     expect([...enabledFake.state.commands.keys()]).toEqual(["team", "team-status", "team-retro"]);
     for (const role of waveRoles) {
       expect(enabledFake.state.agents.get(role)?.system).toContain(REVIEW_WAVE_HEADING);
@@ -118,6 +121,13 @@ describe("delivery-team plugin registration", () => {
     assertCleanup(disabledCleanup);
     expect(disabledFake.state.tools.has("team_worktree")).toBe(true);
     expect(disabledFake.state.tools.size).toBe(10);
+    expect([...disabledFake.state.tools.keys()].sort()).toEqual([...EXPECTED_TOOL_NAMES]);
+    expect([...disabledFake.state.commands.keys()]).toEqual(["team", "team-status", "team-retro"]);
+    expect([...disabledFake.state.agents.keys()].sort()).toEqual([...ROLE_IDS].sort());
+    const worktreeDescription = disabledFake.state.tools.get("team_worktree")?.description;
+    expect(worktreeDescription).toContain("Always registered");
+    expect(worktreeDescription).toContain("worktrees.enabled");
+    expect(worktreeDescription).toContain("Git repository");
     for (const role of ROLE_IDS) {
       expect(disabledFake.state.agents.get(role)?.system).toBe(getDefaultPrompt(role));
       expect(disabledFake.state.agents.get(role)?.system).not.toContain(REVIEW_WAVE_HEADING);

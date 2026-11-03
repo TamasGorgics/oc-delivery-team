@@ -151,6 +151,7 @@ describe("team_worktree", () => {
   test("is registered when disabled and returns worktrees_disabled before name, run, or Git checks", async () => {
     const projectDir = tempDirectory();
     const harness = await setup(projectDir, { enabled: false, baseDir: "../worktrees" });
+    expect(existsSync(path.join(projectDir, ".git"))).toBe(false);
     expect(harness.fake.state.tools.has("team_worktree")).toBe(true);
     expect(harness.fake.state.tools.size).toBe(10);
 

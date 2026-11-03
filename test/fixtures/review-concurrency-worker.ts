@@ -3,7 +3,7 @@ import path from "node:path";
 import deliveryTeam from "../../src/index";
 import { createFakeContext } from "../fakes/ctx";
 
-const [projectDir, runId, roleArg] = process.argv.slice(2);
+const [projectDir, runId, roleArg, reviewMode] = process.argv.slice(2);
 
 if (!projectDir || !runId || (roleArg !== "qa" && roleArg !== "adversary")) {
   console.error("Expected project directory, run id, and reviewer role (qa|adversary) arguments.");
@@ -17,7 +17,7 @@ const contents = role === "qa"
 
 const fake = createFakeContext({
   projectDirectory: projectDir,
-  options: { reviews: { parallel: true } },
+  options: reviewMode === "default" ? {} : { reviews: { parallel: true } },
 });
 const cleanup = await deliveryTeam.setup(fake.context);
 if (typeof cleanup !== "function") throw new Error("Plugin setup did not return a cleanup function.");
