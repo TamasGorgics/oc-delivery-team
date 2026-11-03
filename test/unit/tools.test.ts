@@ -1233,6 +1233,37 @@ describe("disabled review roles", () => {
       expect(await loopCounts(qaDisabled, qaRun)).toEqual({});
     });
   }
+
+  test("skips a run already sitting in a disabled review phase after a resume", async () => {
+    const qaDisabled = await setup({ config: { roles: { disabled: ["qa"] } } });
+    const qaRun = (await call(qaDisabled, "team_start", { title: "Resumed qa" })).run as string;
+    const qaConnection = await openDatabase(path.join(qaDisabled.rootDir, "team.db"));
+    try {
+      new RunRepository(qaConnection.db).updatePhase(qaRun, "qa");
+    } finally {
+      qaConnection.db.close();
+    }
+    const qaStatus = await call(qaDisabled, "team_status", { run: qaRun });
+    expect(qaStatus.gate).toMatchObject({ ok: true, code: "ok" });
+    expect(qaStatus.next_action).toContain("no review artifact is required");
+    const qaAdvance = await call(qaDisabled, "team_advance", { run: qaRun });
+    expect(qaAdvance).toMatchObject({ ok: true, from: "qa", to: "adversary" });
+    expect(qaAdvance.skipped).toBeUndefined();
+
+    const adversaryDisabled = await setup({ config: { roles: { disabled: ["adversary"] } } });
+    const adversaryRun = (await call(adversaryDisabled, "team_start", { title: "Resumed adversary" })).run as string;
+    const adversaryConnection = await openDatabase(path.join(adversaryDisabled.rootDir, "team.db"));
+    try {
+      new RunRepository(adversaryConnection.db).updatePhase(adversaryRun, "adversary");
+    } finally {
+      adversaryConnection.db.close();
+    }
+    const adversaryStatus = await call(adversaryDisabled, "team_status", { run: adversaryRun });
+    expect(adversaryStatus.gate).toMatchObject({ ok: true, code: "ok" });
+    expect(adversaryStatus.next_action).toContain("no review artifact is required");
+    expect(await call(adversaryDisabled, "team_advance", { run: adversaryRun }))
+      .toMatchObject({ ok: true, from: "adversary", to: "docs" });
+  });
 });
 
 describe("run resolution and stack tools", () => {
