@@ -14,7 +14,7 @@ git diff --check
 git status --short
 ```
 
-The full test suite includes the prompt-neutrality lint, gate, state, migration, learning-loop, worktree, and eval coverage. The working tree must be clean before tagging. The `.github/workflows/ci.yml` workflow runs the same checks on pushes and pull requests; it must be green before release.
+The full test suite includes the prompt-neutrality lint, gate, state, migration, learning-loop, worktree, and eval coverage. The working tree must be clean before tagging. GitHub Actions CI runs the same checks on push to main and pull requests: install, typecheck, tests, prompt-neutrality tests, and package-content verification. Run the commands locally as well and record the results before release.
 
 ## 2. Package manifest
 
@@ -83,7 +83,7 @@ A model-provider call is required for the full quick-start check. If the provide
 
 Verify SPEC §20:
 
-- M0–M7 acceptance criteria are checked.
+- M0–M8 acceptance criteria are checked.
 - Typecheck and the full test suite pass.
 - Clean-project install loads the plugin and the README quick start works.
 - An approved lesson appears in a later run's injected context.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+- Add the optional `reviews.parallel` review wave: `qa` becomes a two-artifact barrier (`qa.md` with `VERDICT: PASS`, `adversary.md` with `BLOCKERS: 0`), a passing barrier advances directly `qa -> docs`, and the `adversary` phase is skipped. The default remains the sequential `qa -> adversary -> docs` pipeline.
+- Add role-scoped loop counters `(run_id, phase, role)` and migration 3. The migration rebuilds `loops`, aggregate-copies legacy counts into `role=''`, verifies the primary key, repairs drifted tables, and rechecks applied versions inside the transaction.
+- Add `review.wave.started|denied|completed` events, the additive `review_wave` status payload with member gates/loops and `generation`, `role_loops`, role-qualified report loops, and a `## Review wave` report section.
+- Add conditional parallel-review guidance for `team-lead`, `qa`, `adversary`, and `docs` only when the option is enabled; built-in prompt bodies and disabled effective prompts are unchanged.
+- Add barrier/fallback/rewind/config/report/prompt tests, migration 3 upgrade and drifted-table tests, and a two-process WAL review concurrency test.
+- Known limitations: stale passing review artifacts after a rewind to `qa` can make the barrier ready immediately; host child-session overlap was verified in a two-session spike (~10.45s), while provider rate limits or host scheduling can still serialize reviewers and the supported fallback remains sequential reviewers in `qa`; concurrent duplicate `team_advance` calls can duplicate a transition; migration 3 fails safely and rolls back on orphan loop rows; reviewer artifact ownership is prompt-level; `v1.0.0` remains blocked on manual `/team` verification.
+
 ## 0.1.8
 
 - Require every role to create its artifact early, before deep exploration.
@@ -49,7 +58,7 @@
 ## 0.1.1
 
 - Correct GitHub-based installation and upgrade instructions; no local checkout or project `node_modules` is required.
-- Add a GitHub Actions CI workflow for typechecking, tests, prompt neutrality, and package-manifest checks.
+- Run typecheck, the full test suite, prompt-neutrality checks, and package verification in GitHub Actions CI.
 - Add Code Mode guidance to every effective prompt, including approved prompt overrides.
 - Enforce exact run artifact paths and prevent one role from persisting another role's artifact.
 - Move the specification and roadmap under `docs/` and keep them out of the published package.

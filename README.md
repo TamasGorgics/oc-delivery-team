@@ -27,7 +27,7 @@ Add the package tag to the project's `opencode.json`:
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "github:TamasGorgics/oc-delivery-team#v0.1.8",
+      "package": "github:TamasGorgics/oc-delivery-team#v0.2.0",
       "options": {
         "root": ".team",
         "maxLoops": 3
@@ -39,14 +39,14 @@ Add the package tag to the project's `opencode.json`:
 
 OpenCode installs the package into its plugin cache and resolves the tag. Every developer using the project gets the same plugin version without cloning this repository.
 
-Pin the tag. To upgrade, change `#v0.1.8` to the newer release tag and restart OpenCode. Use the same tag everywhere below.
+Pin the tag. To upgrade, change `#v0.2.0` to the newer release tag and restart OpenCode. Use the same tag everywhere below.
 
 ### Global plugin
 
 If you want the plugin in every project, install it through OpenCode instead:
 
 ```sh
-opencode plugin add 'github:TamasGorgics/oc-delivery-team#v0.1.8'
+opencode plugin add 'github:TamasGorgics/oc-delivery-team#v0.2.0'
 opencode plugin list
 ```
 
@@ -57,14 +57,14 @@ This writes the package entry to the global OpenCode config. Edit that entry to 
 The `team` CLI is a separate executable. Install it globally from the same GitHub tag:
 
 ```sh
-npm install --global 'github:TamasGorgics/oc-delivery-team#v0.1.8'
+npm install --global 'github:TamasGorgics/oc-delivery-team#v0.2.0'
 team --help
 ```
 
 Or run it one-off without a global install:
 
 ```sh
-npx --yes --package 'github:TamasGorgics/oc-delivery-team#v0.1.8' team --help
+npx --yes --package 'github:TamasGorgics/oc-delivery-team#v0.2.0' team --help
 ```
 
 Bun must be installed and available on `PATH` because the package entry and CLI are TypeScript. To upgrade the CLI, run the install command with the new tag.
@@ -113,7 +113,8 @@ Plugin options are passed under the `options` object in `opencode.json`:
 |---|---|---|
 | `root` | `.team` | Data root for the database, run artifacts, prompt approvals, proposals, and exports |
 | `dbPath` | `<root>/team.db` | SQLite database path |
-| `maxLoops` | `3` | Loop-review cap per phase before escalation |
+| `maxLoops` | `3` | Loop-review cap per phase and role before escalation |
+| `reviews.parallel` | `false` | Run QA and adversary as one review wave in `qa`; requires both roles |
 | `lessons.topN` | `8` | Maximum approved lessons considered per request |
 | `lessons.budgetChars` | `4000` | Hard cap on injected lesson text |
 | `stack.detect` | `true` | Detect the Stack Profile from project markers |
@@ -187,6 +188,48 @@ When enabled, the lead may dispatch independent developer tasks in parallel. Eac
 
 All worktrees share the main repository's `.team/` database and run artifacts. Worktrees are never deleted automatically; `team runs` lists delivery-team worktrees for manual cleanup.
 
+## Parallel review wave
+
+The review tail is sequential by default:
+
+```text
+test -> qa -> adversary -> docs -> retro
+```
+
+Set `reviews.parallel` to `true` to make `qa` a two-artifact review wave and skip the separate `adversary` phase:
+
+```json
+{
+  "plugins": [
+    {
+      "package": "opencode-delivery-team",
+      "options": { "reviews": { "parallel": true } }
+    }
+  ]
+}
+```
+
+When enabled:
+
+- After `test` passes, the run enters `qa`. The lead dispatches `qa` and `adversary` together, or sequentially when the host cannot run them together. QA writes only `qa.md` with `VERDICT: PASS`; adversary writes only `adversary.md` with an integer `BLOCKERS: 0`.
+- The `qa` gate is a **barrier**. Both artifacts are checked in the fixed order `qa`, then `adversary`; a missing artifact or failing footer keeps the run in `qa`. A passing `qa.md` alone never advances the run. The denial names every failing member and artifact.
+- When both pass, `team_advance` moves directly `qa -> docs`. The `adversary` phase is not entered; `docs` starts only after the barrier, and `retro` remains last.
+- `team_status.review_wave` exposes `enabled`, `active`, `ready`, `phase`, `members[].gate`, `members[].loop`, `artifacts`, `started_at`, and `generation`. An active barrier is also the top-level `gate`, with a `members` array. `role_loops` appears only when per-role retry rows exist.
+- Retry counters are per role: `team_loop` uses `(run, qa, qa)` and `(run, qa, adversary)`, so one reviewer can escalate without consuming the other's budget. Reviewers infer their role; a non-reviewer such as the lead must pass `role="qa"` or `role="adversary"`.
+- `team_rewind(to="adversary")` is rejected with `review_wave_rewind_blocked` while the wave is enabled. A rewind to `qa` restarts the wave, increments the wave-level counter, preserves member counters, and emits `review.wave.started` with `cause: "rewind"`. Use `implement` for fixes.
+- **Fallback:** if the host serializes child sessions or a reviewer fails to start, run the missing reviewer sequentially in the same `qa` phase. The barrier only checks artifact contents, so either completion order works and both artifacts are still required. This is the supported fallback.
+- Lifecycle events `review.wave.started`, `review.wave.denied`, and `review.wave.completed` and a `## Review wave` section in `team report` record the wave. Loop lines gain a `[role]` suffix only for reviewer retries.
+
+If `qa` or `adversary` is listed in `roles.disabled`, setup warns at `reviews.parallel` and treats the wave as disabled; sequential mode applies and no unregistered reviewer is required. Changing the option during an open run is unsupported — finish or restart the run before toggling it.
+
+Known limitations in `0.2.0`:
+
+- A rewind to `qa` does not delete, move, archive, or freshness-check existing `qa.md` and `adversary.md`. Previously passing artifacts can make the barrier immediately `ready`. Prompts require both reviewers to overwrite their own artifacts, and `started_at`/`generation` show re-entry, but the gate does not enforce freshness.
+- Reviewer artifact ownership is prompt-level. The barrier verifies the two files' contents, not which agent wrote them, so run trusted agents and do not rely on the wave for review independence against a hostile or misconfigured writer.
+- Concurrent duplicate `team_advance` calls can both apply the same stale `qa -> docs` transition. Let one advance finish before re-reading status and retrying.
+- Host child-session overlap was verified in a two-session spike (~10.45s). Two-process shared-WAL safety and the sequential fallback are tested; provider rate limits or host scheduling can still serialize reviewers, in which case the fallback applies.
+- Upgrading to `0.2.0` applies migration 3, which rebuilds the `loops` table. Back up `.team/team.db` first. Legacy loop rows whose `run_id` is missing from `runs` make the migration fail safely and roll back; clean them up before retrying.
+
 ## Human approvals
 
 Agents may propose lessons and complete prompt overrides, but they cannot approve them.
@@ -247,7 +290,7 @@ This repository can be loaded directly during development through `.opencode/plu
 
 ### Developing the plugin with itself
 
-Yes, you can use the plugin to develop the plugin. OpenCode in this checkout already loads the local source through `.opencode/plugins/delivery-team/index.ts`; do not configure the published `github:...#v0.1.8` package for self-development, or you will run the released code instead of your working tree.
+Yes, you can use the plugin to develop the plugin. OpenCode in this checkout already loads the local source through `.opencode/plugins/delivery-team/index.ts`; do not configure the published `github:...#v0.2.0` package for self-development, or you will run the released code instead of your working tree.
 
 1. Start with a clean branch and run `/team` from this repository.
 2. Let the lead drive the normal phase gates. Source edits are blocked before `implement`; the developer and tester edit and run the project's Stack Profile commands.
@@ -271,6 +314,7 @@ Self-development uses the same `.team/` data root as other runs in this checkout
 - Prompt approvals require an OpenCode restart.
 - The plugin is developed and verified against OpenCode `2.2.0`; newer host releases require a compatibility check.
 - Live evals require an available model/provider; the unit suite uses a deterministic fake runner.
+- The manual `/team` quick start has not been re-verified for `0.2.0`; it remains a release-checklist item. Automated tests and the local quality gate are the current evidence.
 
 ## Development
 
