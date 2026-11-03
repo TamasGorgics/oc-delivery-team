@@ -55,7 +55,7 @@ export function createTeamWorktree(input: {
   if (!repoResult.ok) {
     const code = repoResult.message.startsWith("Git is unavailable:") ? "git_unavailable" : "not_git_repository";
     throw new WorktreeError(
-      `${repoResult.message} Worktrees require a Git repository; continue with sequential development in place.`,
+      `${repoResult.message} Worktrees require a Git repository; continue sequentially in the main checkout and do not retry team_worktree.`,
       code,
     );
   }

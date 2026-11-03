@@ -153,13 +153,13 @@ export function parseConfig(
 
   const reviewsRaw = readObject(options.reviews, "reviews", warnings);
   warnUnknown(reviewsRaw, REVIEWS_KEYS, "reviews", warnings);
-  const requestedParallel = readBoolean(reviewsRaw.parallel, false, "reviews.parallel", warnings);
+  const requestedParallel = readBoolean(reviewsRaw.parallel, true, "reviews.parallel", warnings);
   const missingReviewRoles = (["qa", "adversary"] as const).filter((role) => disabled.includes(role));
   const parallel = requestedParallel && missingReviewRoles.length === 0;
   if (requestedParallel && missingReviewRoles.length > 0) {
     warnings.push({
       path: "reviews.parallel",
-      message: `Requires the qa and adversary roles; the review wave is disabled because ${missingReviewRoles.join(", ")} disabled.`,
+      message: `Requires the qa and adversary roles; the review wave is disabled because ${missingReviewRoles.join(", ")} disabled. Set reviews.parallel=false to run sequential reviews.`,
     });
   }
 

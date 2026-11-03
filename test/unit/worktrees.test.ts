@@ -98,11 +98,12 @@ describe("team_worktree", () => {
     expect(isSafeWorktreeName("task/one")).toBe(false);
   });
 
-  test("is registered only when enabled and creates unique branches and paths", async () => {
+  test("is always registered and creates unique branches and paths when enabled", async () => {
     const { parentDir, projectDir } = createGitProject();
     const baseDir = "../worktrees";
     const harness = await setup(projectDir, { enabled: true, baseDir });
     expect(harness.fake.state.tools.has("team_worktree")).toBe(true);
+    expect(harness.fake.state.tools.size).toBe(10);
 
     const started = await call(harness, "team_start", { title: "Parallel delivery" });
     const run = started.run as string;
@@ -147,23 +148,57 @@ describe("team_worktree", () => {
     expect(git(projectDir, ["worktree", "list", "--porcelain"]).match(/worktree /g)).toHaveLength(3);
   });
 
-  test("returns a clear non-Git fallback error and registers no tool when disabled", async () => {
+  test("is registered when disabled and returns worktrees_disabled before name, run, or Git checks", async () => {
     const projectDir = tempDirectory();
-    const disabled = await setup(projectDir, { enabled: false, baseDir: "../worktrees" });
-    expect(disabled.fake.state.tools.has("team_worktree")).toBe(false);
-    await cleanups.pop()?.();
+    const harness = await setup(projectDir, { enabled: false, baseDir: "../worktrees" });
+    expect(harness.fake.state.tools.has("team_worktree")).toBe(true);
+    expect(harness.fake.state.tools.size).toBe(10);
 
+    // No team_start and a syntactically invalid name: the disabled guard wins.
+    const result = await call(harness, "team_worktree", { name: "task/one", run: "missing-run" });
+    expect(result).toMatchObject({ ok: false, code: "worktrees_disabled" });
+    expect(result.error).toContain("disabled");
+    expect(result.error).toContain("sequential");
+    expect(result.error).toContain("main checkout");
+    expect(result.error).toContain("do not retry");
+  });
+
+  test("returns a clear non-Git fallback error when enabled", async () => {
+    const projectDir = tempDirectory();
     const enabled = await setup(projectDir, { enabled: true, baseDir: "../worktrees" });
+    expect(enabled.fake.state.tools.has("team_worktree")).toBe(true);
     const started = await call(enabled, "team_start", { title: "No Git project" });
     const result = await call(enabled, "team_worktree", {
       run: started.run,
       name: "task-one",
     });
     expect(result).toMatchObject({ ok: false, code: "not_git_repository" });
-    expect(result.error).toContain("sequential development");
+    expect(result.error).toContain("Git repository");
+    expect(result.error).toContain("sequential");
+    expect(result.error).toContain("main checkout");
+    expect(result.error).toContain("do not retry");
 
     const listed = await cli(projectDir, ["runs", "--root", enabled.rootDir]);
     expect(listed.code).toBe(0);
     expect(JSON.parse(listed.output)).toMatchObject({ worktree_status: "unavailable", worktrees: [] });
+  });
+
+  test("returns git_unavailable with fallback wording when the git executable is missing", async () => {
+    const projectDir = tempDirectory();
+    const enabled = await setup(projectDir, { enabled: true, baseDir: "../worktrees" });
+    const started = await call(enabled, "team_start", { title: "No Git binary" });
+
+    const originalPath = process.env.PATH;
+    const emptyPath = tempDirectory();
+    process.env.PATH = emptyPath;
+    try {
+      const result = await call(enabled, "team_worktree", { run: started.run, name: "task-one" });
+      expect(result).toMatchObject({ ok: false, code: "git_unavailable" });
+      expect(result.error).toContain("Git is unavailable");
+      expect(result.error).toContain("sequential");
+      expect(result.error).toContain("do not retry");
+    } finally {
+      process.env.PATH = originalPath;
+    }
   });
 });

@@ -9,7 +9,7 @@ if (!projectDir || !runId || !worker) {
 
 const fake = createFakeContext({
   projectDirectory: projectDir,
-  options: { worktrees: { enabled: true } },
+  options: { worktrees: { enabled: true }, reviews: { parallel: false } },
 });
 const cleanup = await deliveryTeam.setup(fake.context);
 if (typeof cleanup !== "function") throw new Error("Plugin setup did not return a cleanup function.");

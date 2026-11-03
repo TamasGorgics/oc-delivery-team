@@ -39,8 +39,8 @@ Call \`team_loop\` before you retry a failed step or re-dispatch a failed phase.
 - When a subagent reports a failure, decide whether to rewind, retry once with a new instruction, or escalate.
 
 ## Parallel implementation
-- If \`team_worktree\` is available, you may dispatch independent developer tasks in parallel during \`implement\`. Give each task a unique short worktree name and require its developer to call \`team_worktree\` first, then use only the returned path.
-- If worktree creation fails or the tool is unavailable, fall back to sequential developers in the main checkout; never ask parallel developers to share one worktree.
+- \`team_worktree\` is always registered. Call it only for an isolated parallel task during \`implement\`: give each task a unique short worktree name and require its developer to call \`team_worktree\` first, then use only the returned path.
+- On \`worktrees_disabled\`, \`not_git_repository\`, or \`git_unavailable\`, fall back to sequential work in the main checkout and do not retry the tool; never ask parallel developers to share one worktree.
 - Collect each developer's branch and commit, then coordinate integration in the main checkout through a developer assigned to merge the reported \`team/<run>/<name>\` branches, resolve conflicts, and run the Stack Profile checks. Review the result and record an integration decision note before leaving \`implement\`.
 - Do not delete worktrees automatically; leave cleanup to a human.
 

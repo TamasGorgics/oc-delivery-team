@@ -66,7 +66,22 @@ describe("delivery-team plugin registration", () => {
     expect(fake.state.commands.size).toBe(0);
   });
 
-  test("adds review wave guidance only when reviews.parallel is enabled", async () => {
+  test("adds review wave guidance by default and only omits it for explicit false", async () => {
+    const waveRoles = ["team-lead", "qa", "adversary", "docs"] as const;
+    const defaultFake = createFakeContext({ projectDirectory: tempProject() });
+    const defaultCleanup = await deliveryTeam.setup(defaultFake.context);
+    assertCleanup(defaultCleanup);
+
+    expect(defaultFake.state.tools.has("team_worktree")).toBe(true);
+    expect(defaultFake.state.tools.size).toBe(10);
+    for (const role of waveRoles) {
+      expect(defaultFake.state.agents.get(role)?.system).toContain(REVIEW_WAVE_HEADING);
+    }
+    for (const role of ROLE_IDS.filter((id) => !(waveRoles as readonly string[]).includes(id))) {
+      expect(defaultFake.state.agents.get(role)?.system).not.toContain(REVIEW_WAVE_HEADING);
+    }
+    await defaultCleanup();
+
     const enabledFake = createFakeContext({
       projectDirectory: tempProject(),
       options: { reviews: { parallel: true } },
@@ -84,21 +99,28 @@ describe("delivery-team plugin registration", () => {
       "team_stack_update",
       "team_start",
       "team_status",
+      "team_worktree",
     ]);
     expect([...enabledFake.state.commands.keys()]).toEqual(["team", "team-status", "team-retro"]);
-    for (const role of ["team-lead", "qa", "adversary", "docs"]) {
+    for (const role of waveRoles) {
       expect(enabledFake.state.agents.get(role)?.system).toContain(REVIEW_WAVE_HEADING);
     }
-    for (const role of ROLE_IDS.filter((id) => !["team-lead", "qa", "adversary", "docs"].includes(id))) {
+    for (const role of ROLE_IDS.filter((id) => !(waveRoles as readonly string[]).includes(id))) {
       expect(enabledFake.state.agents.get(role)?.system).not.toContain(REVIEW_WAVE_HEADING);
     }
     await enabledCleanup();
 
-    const disabledFake = createFakeContext({ projectDirectory: tempProject() });
+    const disabledFake = createFakeContext({
+      projectDirectory: tempProject(),
+      options: { reviews: { parallel: false } },
+    });
     const disabledCleanup = await deliveryTeam.setup(disabledFake.context);
     assertCleanup(disabledCleanup);
+    expect(disabledFake.state.tools.has("team_worktree")).toBe(true);
+    expect(disabledFake.state.tools.size).toBe(10);
     for (const role of ROLE_IDS) {
       expect(disabledFake.state.agents.get(role)?.system).toBe(getDefaultPrompt(role));
+      expect(disabledFake.state.agents.get(role)?.system).not.toContain(REVIEW_WAVE_HEADING);
     }
     await disabledCleanup();
   });
@@ -204,7 +226,10 @@ describe("delivery-team plugin registration", () => {
       db.close();
     }
 
-    const fake = createFakeContext({ projectDirectory });
+    const fake = createFakeContext({
+      projectDirectory,
+      options: { reviews: { parallel: false } },
+    });
     const cleanup = await deliveryTeam.setup(fake.context);
     assertCleanup(cleanup);
     expect(fake.state.agents.get("team-lead")?.system).toBe(withRuntimeGuidance(approvedText));

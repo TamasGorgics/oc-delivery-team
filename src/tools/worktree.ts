@@ -24,7 +24,8 @@ interface WorktreeInput {
 export function createWorktreeTool(runtime: ToolRuntime) {
   return defineTeamTool<WorktreeInput>(runtime, {
     name: "team_worktree",
-    description: "Create a named Git worktree for an open delivery run when worktrees are enabled.",
+    description:
+      "Always registered. Create a named Git worktree for an open delivery run; creation requires worktrees.enabled and a Git repository.",
     input: objectSchema({
       name: { type: "string", description: "Unique task name matching ^[a-z0-9-]{1,40}$." },
       run: { type: "string", description: "Optional run id; defaults to the current session's run." },
@@ -32,11 +33,14 @@ export function createWorktreeTool(runtime: ToolRuntime) {
     execute: async (raw, context) => {
       const input = readToolInput(raw);
       hasExplicitInputKeys(input, ["name", "run"]);
+      if (!runtime.config.worktrees.enabled) {
+        throw new ToolInputError(
+          "Worktrees are disabled; continue sequentially in the main checkout and do not retry team_worktree.",
+          "worktrees_disabled",
+        );
+      }
       const name = readRequiredString(input, "name", { max: 40 });
       const runId = readOptionalString(input, "run");
-      if (!runtime.config.worktrees.enabled) {
-        throw new ToolInputError("Worktrees are disabled; continue with sequential development in place.", "worktrees_disabled");
-      }
 
       requireServices(runtime);
       const identity = toolIdentity(context);

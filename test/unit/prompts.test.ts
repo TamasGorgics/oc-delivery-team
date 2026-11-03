@@ -52,6 +52,15 @@ describe("built-in role prompts", () => {
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("brainstorm -> spec -> plan -> implement -> test -> qa -> adversary -> docs -> retro -> done");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("ask the human");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("team_worktree");
+    for (const prompt of [DEFAULT_PROMPTS["team-lead"], DEFAULT_PROMPTS.developer]) {
+      expect(prompt).toContain("always registered");
+      expect(prompt).toContain("isolated parallel task");
+      expect(prompt).toContain("worktrees_disabled");
+      expect(prompt).toContain("not_git_repository");
+      expect(prompt).toContain("git_unavailable");
+      expect(prompt).toContain("main checkout");
+      expect(prompt).toContain("do not retry");
+    }
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("exact `artifact_dir`");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("never ask a different role to persist another role's artifact");
     expect(DEFAULT_PROMPTS["team-lead"]).toContain("If a subagent reaches its step limit");

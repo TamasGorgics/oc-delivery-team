@@ -12,7 +12,7 @@ describe("plugin configuration", () => {
     expect(config.lessons).toEqual({ topN: 8, budgetChars: 4000 });
     expect(config.stack).toEqual({ detect: true, overrides: undefined });
     expect(config.roles.disabled).toEqual([]);
-    expect(config.reviews).toEqual({ parallel: false });
+    expect(config.reviews).toEqual({ parallel: true });
     expect(config.gating).toEqual({
       enabled: true,
       strict: false,
@@ -129,27 +129,37 @@ describe("plugin configuration", () => {
     expect(config.warnings.some((warning) => warning.path === "models.roles.developer.model")).toBe(true);
   });
 
-  test("parses reviews.parallel and warns without failing setup", () => {
+  test("defaults reviews.parallel to true and keeps explicit false as the escape hatch", () => {
+    const defaults = parseConfig(undefined, "/workspace/project");
+    expect(defaults.reviews).toEqual({ parallel: true });
+    expect(defaults.warnings).toEqual([]);
+
     const enabled = parseConfig({ reviews: { parallel: true } }, "/workspace/project");
     expect(enabled.reviews).toEqual({ parallel: true });
     expect(enabled.warnings).toEqual([]);
 
+    const explicitFalse = parseConfig({ reviews: { parallel: false } }, "/workspace/project");
+    expect(explicitFalse.reviews).toEqual({ parallel: false });
+    expect(explicitFalse.warnings).toEqual([]);
+  });
+
+  test("warns and falls back to the default when reviews.parallel or reviews is invalid", () => {
     const nonBoolean = parseConfig({ reviews: { parallel: "yes" } }, "/workspace/project");
-    expect(nonBoolean.reviews).toEqual({ parallel: false });
+    expect(nonBoolean.reviews).toEqual({ parallel: true });
     expect(nonBoolean.warnings).toContainEqual({
       path: "reviews.parallel",
       message: "Must be a boolean; using default.",
     });
 
     const nonObject = parseConfig({ reviews: true }, "/workspace/project");
-    expect(nonObject.reviews).toEqual({ parallel: false });
+    expect(nonObject.reviews).toEqual({ parallel: true });
     expect(nonObject.warnings).toContainEqual({
       path: "reviews",
       message: "Must be an object; using defaults.",
     });
 
     const unknown = parseConfig({ reviews: { bogus: true } }, "/workspace/project");
-    expect(unknown.reviews).toEqual({ parallel: false });
+    expect(unknown.reviews).toEqual({ parallel: true });
     expect(unknown.warnings).toContainEqual({
       path: "reviews.bogus",
       message: "Unknown option; ignored.",
@@ -157,18 +167,26 @@ describe("plugin configuration", () => {
   });
 
   test("effectively disables the review wave when a required review role is disabled", () => {
-    const config = parseConfig({
+    const explicitTrue = parseConfig({
       maxLoops: 5,
       roles: { disabled: ["adversary"] },
       reviews: { parallel: true },
     }, "/workspace/project");
 
-    expect(config.reviews).toEqual({ parallel: false });
-    expect(config.maxLoops).toBe(5);
-    const warnings = config.warnings.filter((warning) => warning.path === "reviews.parallel");
+    expect(explicitTrue.reviews).toEqual({ parallel: false });
+    expect(explicitTrue.maxLoops).toBe(5);
+    const warnings = explicitTrue.warnings.filter((warning) => warning.path === "reviews.parallel");
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.message).toContain("adversary");
     expect(warnings[0]?.message).toContain("disabled");
+    expect(warnings[0]?.message).toContain("reviews.parallel=false");
+
+    const defaulted = parseConfig({ roles: { disabled: ["adversary"] } }, "/workspace/project");
+    expect(defaulted.reviews).toEqual({ parallel: false });
+    const defaultWarnings = defaulted.warnings.filter((warning) => warning.path === "reviews.parallel");
+    expect(defaultWarnings).toHaveLength(1);
+    expect(defaultWarnings[0]?.message).toContain("adversary");
+    expect(defaultWarnings[0]?.message).toContain("reviews.parallel=false");
 
     const qaDisabled = parseConfig({
       roles: { disabled: ["qa"] },
@@ -179,6 +197,7 @@ describe("plugin configuration", () => {
     expect(qaWarnings).toHaveLength(1);
     expect(qaWarnings[0]?.message).toContain("qa");
     expect(qaWarnings[0]?.message).toContain("disabled");
+    expect(qaWarnings[0]?.message).toContain("reviews.parallel=false");
 
     const bothDisabled = parseConfig({
       roles: { disabled: ["qa", "adversary"] },
@@ -189,6 +208,14 @@ describe("plugin configuration", () => {
     expect(bothWarnings).toHaveLength(1);
     expect(bothWarnings[0]?.message).toContain("qa");
     expect(bothWarnings[0]?.message).toContain("adversary");
+    expect(bothWarnings[0]?.message).toContain("reviews.parallel=false");
+
+    const explicitFalse = parseConfig({
+      roles: { disabled: ["qa", "adversary"] },
+      reviews: { parallel: false },
+    }, "/workspace/project");
+    expect(explicitFalse.reviews).toEqual({ parallel: false });
+    expect(explicitFalse.warnings.filter((warning) => warning.path === "reviews.parallel")).toEqual([]);
   });
 
   test("accepts absolute roots and tolerates non-object plugin options", () => {

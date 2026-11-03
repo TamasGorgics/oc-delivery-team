@@ -155,6 +155,7 @@ describe("tool registration and team_start", () => {
       "team_stack_update",
       "team_start",
       "team_status",
+      "team_worktree",
     ]);
     expect(harness.fake.state.toolReloadCount).toBe(1);
     for (const tool of harness.fake.state.tools.values()) {
@@ -344,7 +345,7 @@ describe("tool registration and team_start", () => {
 
 describe("scripted pipeline", () => {
   test("drives every phase to done with gate denials, a report, and terminal state", async () => {
-    const harness = await setup();
+    const harness = await setup({ config: { reviews: { parallel: false } } });
     const started = await call(harness, "team_start", { title: "Pipeline" });
     const run = started.run as string;
 
@@ -505,8 +506,8 @@ describe("loop caps and rewinds", () => {
 });
 
 describe("parallel review wave", () => {
-  test("disabled mode keeps the sequential pipeline and advertises an empty review_wave", async () => {
-    const harness = await setup();
+  test("explicit false keeps the sequential pipeline and advertises an empty review_wave", async () => {
+    const harness = await setup({ config: { reviews: { parallel: false } } });
     const startResult = await harness.fake.invokeTool("team_start", { title: "Sequential" });
     const started = output(startResult);
     const run = started.run as string;
@@ -521,6 +522,8 @@ describe("parallel review wave", () => {
     });
     const startText = (startResult.content as Array<{ text: string }>)[0]!.text;
     expect(startText).not.toContain("Parallel review wave enabled");
+    expect(await call(harness, "team_loop", { run, reason: "role", role: "qa" }))
+      .toMatchObject({ ok: false, code: "review_role_not_enabled" });
 
     const loop = await call(harness, "team_loop", { run, reason: "retry" });
     expect(loop).toMatchObject({ loop_count: 1 });
@@ -560,6 +563,48 @@ describe("parallel review wave", () => {
     )).toBe(true);
     const statusText = ((await harness.fake.invokeTool("team_status", { run })).content as Array<{ text: string }>)[0]!.text;
     expect(statusText).not.toContain("Review wave:");
+  });
+
+  test("default config enables the wave and records role loop rows", async () => {
+    const harness = await setup();
+    const startResult = await harness.fake.invokeTool("team_start", { title: "Default wave" });
+    const started = output(startResult);
+    const run = started.run as string;
+    const qaPath = path.join(harness.rootDir, "runs", run, "qa.md");
+    const adversaryPath = path.join(harness.rootDir, "runs", run, "adversary.md");
+    expect(started.review_wave).toMatchObject({
+      enabled: true,
+      active: false,
+      ready: false,
+      phase: "brainstorm",
+      generation: 0,
+      artifacts: { qa: qaPath, adversary: adversaryPath },
+    });
+    expect((started.review_wave as any).members.map((member: any) => member.role)).toEqual(["qa", "adversary"]);
+    const startText = (startResult.content as Array<{ text: string }>)[0]!.text;
+    expect(startText).toContain("Parallel review wave enabled");
+    expect(startText).toContain("qa -> docs");
+
+    await driveToQa(harness, run);
+    const events = await runEvents(harness, run);
+    expect(events.filter((event) => event.kind === "review.wave.started")).toHaveLength(1);
+    const inQa = await call(harness, "team_status", { run });
+    expect(inQa.review_wave).toMatchObject({
+      enabled: true,
+      active: true,
+      ready: false,
+      phase: "qa",
+      generation: 1,
+    });
+    expect(inQa.review_wave.members.map((member: any) => member.role)).toEqual(["qa", "adversary"]);
+
+    expect(await call(harness, "team_loop", { run, reason: "qa retry" }, { agent: "qa" }))
+      .toMatchObject({ role: "qa", loop_count: 1 });
+    expect(await loopCounts(harness, run)).toEqual({ "qa:qa": 1 });
+    const afterLoop = await call(harness, "team_status", { run });
+    expect(afterLoop.role_loops).toEqual([
+      { phase: "qa", role: "qa", count: 1, remaining: 2, escalated: false },
+    ]);
   });
 
   test("enabled wave evaluates both reviewers, aggregates denials, and advances qa -> docs", async () => {
@@ -815,7 +860,7 @@ describe("parallel review wave", () => {
     expect(phaseLoop.role).toBeUndefined();
     expect(await loopCounts(enabled, run)).toEqual({ "brainstorm:": 1 });
 
-    const sequential = await setup();
+    const sequential = await setup({ config: { reviews: { parallel: false } } });
     const sequentialRun = (await call(sequential, "team_start", { title: "Sequential qa" })).run as string;
     await driveToQa(sequential, sequentialRun);
     expect(await call(sequential, "team_loop", { run: sequentialRun, reason: "qa retry" }, { agent: "qa" }))
@@ -933,7 +978,7 @@ describe("parallel review wave", () => {
     expect(adversaryLoops).toHaveLength(2);
     expect(events.find((event) => event.kind === "loop.exceeded")?.data).toMatchObject({ role: "qa", count: 3 });
 
-    const sequential = await setup();
+    const sequential = await setup({ config: { reviews: { parallel: false } } });
     const sequentialRun = (await call(sequential, "team_start", { title: "No wave" })).run as string;
     expect(await call(sequential, "team_loop", { run: sequentialRun, reason: "role", role: "qa" }))
       .toMatchObject({ ok: false, code: "review_role_not_enabled" });
@@ -1082,7 +1127,7 @@ describe("database unavailable behavior", () => {
     expect(snapshot?.database.status).toBe("unavailable");
     expect(snapshot?.database.error).toBeTruthy();
     expect(snapshot?.setupWarnings.some((warning) => warning.startsWith("database.open:"))).toBe(true);
-    expect(harness.fake.state.tools.size).toBe(9);
+    expect(harness.fake.state.tools.size).toBe(10);
 
     expect(await call(harness, "team_start", { title: "No db" }))
       .toMatchObject({ ok: false, code: "database_unavailable" });

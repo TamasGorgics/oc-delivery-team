@@ -20,8 +20,8 @@ export function createTeamTools(runtime: ToolRuntime): readonly ToolInfo[] {
     createLoopTool(runtime),
     createNoteTool(runtime),
     ...createStackTools(runtime),
+    createWorktreeTool(runtime),
   ];
-  if (runtime.config.worktrees.enabled) tools.push(createWorktreeTool(runtime));
   return tools;
 }
 
