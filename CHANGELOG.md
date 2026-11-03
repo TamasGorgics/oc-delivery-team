@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- Make the parallel review wave the default: `reviews.parallel` now defaults to `true`. An explicit `reviews.parallel:false` preserves the exact sequential `qa -> adversary -> docs` pipeline, including single-artifact gates, no `review.wave.*` events or non-empty role loop rows, the disabled `review_wave` shape, rewind to `adversary`, and unchanged base prompts.
+- Register `team_worktree` in every plugin catalog, including default and non-Git projects. `worktrees.enabled` still defaults to `false` and now gates creation only. Disabled calls return `worktrees_disabled`; enabled non-Git and missing-Git calls return `not_git_repository` and `git_unavailable`. All three tell the lead to continue sequentially in the main checkout and not retry. Enabled creation, worktree path/branch layout, and conflict behavior are unchanged.
+- Skip disabled review roles: with `qa` and/or `adversary` in `roles.disabled`, the effective wave is off, advances omit that reviewer's artifact and report `skipped`, status reports that no review artifact is required, and `team_rewind` to a disabled review role is rejected with `review_role_disabled`.
+- Fix the disabled-reviewer artifact trap that required an artifact from an unregistered reviewer; remove the unconditional `## Disabled review roles` section from the base prompts; add sequential-fallback wording to the creation-path `git_unavailable` error; dedupe `reviews.parallel` warnings.
+- Dogfood: this run used the default wave at generation 3. QA (`ses_e5caf6ddaffeb28HpRrjDXetR9`, epochs `1793741328977`–`1793741605753`) and adversary (`ses_e5caf6dd9ffeLYotYo70rNWCMl`, `1793741331391`–`1793741895501`) overlapped ~276 s (4.6 min); `review.wave.completed` recorded `601159` ms; the run advanced directly `qa -> docs` with `adversary` skipped.
+- Tests: 228 pass / 0 fail / 2061 expect / 27 files; prompt tests 6 pass / 221 expect. CI runs typecheck, tests, prompt-neutrality tests, and package verification.
+- Known limitations: stale review artifacts after a rewind can make the barrier ready immediately; worktrees are never cleaned up automatically; disabled non-review roles can still own a phase with no registered agent and trap a run (pre-existing); an approved local prompt override may be stale relative to new built-in wording.
+
 ## 0.2.0
 
 - Add the optional `reviews.parallel` review wave: `qa` becomes a two-artifact barrier (`qa.md` with `VERDICT: PASS`, `adversary.md` with `BLOCKERS: 0`), a passing barrier advances directly `qa -> docs`, and the `adversary` phase is skipped. The default remains the sequential `qa -> adversary -> docs` pipeline.

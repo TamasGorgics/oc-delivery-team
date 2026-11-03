@@ -27,7 +27,7 @@ Add the package tag to the project's `opencode.json`:
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "github:TamasGorgics/oc-delivery-team#v0.2.0",
+      "package": "github:TamasGorgics/oc-delivery-team#v0.3.0",
       "options": {
         "root": ".team",
         "maxLoops": 3
@@ -39,14 +39,14 @@ Add the package tag to the project's `opencode.json`:
 
 OpenCode installs the package into its plugin cache and resolves the tag. Every developer using the project gets the same plugin version without cloning this repository.
 
-Pin the tag. To upgrade, change `#v0.2.0` to the newer release tag and restart OpenCode. Use the same tag everywhere below.
+Pin the tag. To upgrade, change the tag to a newer release tag and restart OpenCode. Use the same tag everywhere below.
 
 ### Global plugin
 
 If you want the plugin in every project, install it through OpenCode instead:
 
 ```sh
-opencode plugin add 'github:TamasGorgics/oc-delivery-team#v0.2.0'
+opencode plugin add 'github:TamasGorgics/oc-delivery-team#v0.3.0'
 opencode plugin list
 ```
 
@@ -57,14 +57,14 @@ This writes the package entry to the global OpenCode config. Edit that entry to 
 The `team` CLI is a separate executable. Install it globally from the same GitHub tag:
 
 ```sh
-npm install --global 'github:TamasGorgics/oc-delivery-team#v0.2.0'
+npm install --global 'github:TamasGorgics/oc-delivery-team#v0.3.0'
 team --help
 ```
 
 Or run it one-off without a global install:
 
 ```sh
-npx --yes --package 'github:TamasGorgics/oc-delivery-team#v0.2.0' team --help
+npx --yes --package 'github:TamasGorgics/oc-delivery-team#v0.3.0' team --help
 ```
 
 Bun must be installed and available on `PATH` because the package entry and CLI are TypeScript. To upgrade the CLI, run the install command with the new tag.
@@ -81,6 +81,8 @@ Bun must be installed and available on `PATH` because the package entry and CLI 
 3. The lead moves through:
 
    `brainstorm -> spec -> plan -> implement -> test -> qa -> adversary -> docs -> retro -> done`
+
+   By default, `qa` is a two-artifact review wave that also runs `adversary`; the separate `adversary` phase is skipped. Set `reviews.parallel:false` for the exact sequential `qa -> adversary` pipeline.
 
    The `spec` subagent owns both the `spec` and `plan` phases. The `plan` phase is verification-only when `plan.md` already exists; if it is missing, re-dispatch `spec`. The built-in read-only `plan` agent is not part of this team.
 
@@ -114,7 +116,7 @@ Plugin options are passed under the `options` object in `opencode.json`:
 | `root` | `.team` | Data root for the database, run artifacts, prompt approvals, proposals, and exports |
 | `dbPath` | `<root>/team.db` | SQLite database path |
 | `maxLoops` | `3` | Loop-review cap per phase and role before escalation |
-| `reviews.parallel` | `false` | Run QA and adversary as one review wave in `qa`; requires both roles |
+| `reviews.parallel` | `true` | Run QA and adversary as one review wave in `qa` (default); requires both roles. Set `false` for the exact sequential `qa -> adversary` pipeline |
 | `lessons.topN` | `8` | Maximum approved lessons considered per request |
 | `lessons.budgetChars` | `4000` | Hard cap on injected lesson text |
 | `stack.detect` | `true` | Detect the Stack Profile from project markers |
@@ -126,7 +128,7 @@ Plugin options are passed under the `options` object in `opencode.json`:
 | `gating.pathKeys` | unset | Per-tool input path-key overrides |
 | `trace.captureInput` | `false` | Persist redacted tool inputs |
 | `trace.previewChars` | `0` | Persist this many redacted output characters |
-| `worktrees.enabled` | `false` | Enable the `team_worktree` tool |
+| `worktrees.enabled` | `false` | Allow `team_worktree` to create worktrees (the tool is always registered; creation is opt-in and requires Git) |
 | `worktrees.baseDir` | `../.team-worktrees` | Base directory for Git worktrees |
 
 ### Models
@@ -166,7 +168,7 @@ These are placeholders. Use model references available in your OpenCode installa
 
 ## Worktrees
 
-Worktrees are optional and require a Git repository:
+`team_worktree` is always registered; worktree creation is opt-in. Creation requires `worktrees.enabled: true` and a Git repository:
 
 ```json
 {
@@ -184,32 +186,38 @@ Worktrees are optional and require a Git repository:
 }
 ```
 
-When enabled, the lead may dispatch independent developer tasks in parallel. Each developer calls `team_worktree` with the run id and a unique lowercase name, works only in the returned path, and commits its branch. The lead coordinates integration in the main checkout through a developer, reviews the result, and records a decision note.
+Call `team_worktree` only for an isolated parallel task. When creation is enabled, the lead may dispatch independent developer tasks in parallel. Each developer calls `team_worktree` with the run id and a unique lowercase name, works only in the returned path, and commits its branch. The lead coordinates integration in the main checkout through a developer, reviews the result, and records a decision note.
+
+If worktrees are disabled (the default), a call returns `worktrees_disabled`. In a non-Git project it returns `not_git_repository`; if the `git` executable is missing or unusable it returns `git_unavailable`. In all three cases, continue sequentially in the main checkout and do not retry the tool. Do not use `team_worktree` for sequential work.
 
 All worktrees share the main repository's `.team/` database and run artifacts. Worktrees are never deleted automatically; `team runs` lists delivery-team worktrees for manual cleanup.
 
 ## Parallel review wave
 
-The review tail is sequential by default:
+The review wave is the default. After `test` passes, the run enters `qa` and the lead dispatches `qa` and `adversary` together, or sequentially when the host cannot run them together. The `adversary` phase is skipped:
 
 ```text
-test -> qa -> adversary -> docs -> retro
+test -> qa (qa.md + adversary.md barrier) -> docs -> retro
 ```
 
-Set `reviews.parallel` to `true` to make `qa` a two-artifact review wave and skip the separate `adversary` phase:
+The fixed phase list still contains `adversary`; the wave means both reviews happen while the run is in `qa`. No configuration is needed.
+
+Set `reviews.parallel` to `false` for the exact sequential pipeline that shipped before the wave existed:
 
 ```json
 {
   "plugins": [
     {
       "package": "opencode-delivery-team",
-      "options": { "reviews": { "parallel": true } }
+      "options": { "reviews": { "parallel": false } }
     }
   ]
 }
 ```
 
-When enabled:
+With explicit `false`, the pipeline is `test -> qa -> adversary -> docs -> retro`; each gate requires only its own artifact (`qa.md`, then `adversary.md`); no `review.wave.*` event is written; no non-empty role loop rows are created; `review_wave` has `enabled: false` and empty `members`/`artifacts`; `team_rewind(to="adversary")` remains allowed; `team_loop(role="qa"|"adversary")` is rejected with `review_role_not_enabled`; and effective prompts equal the built-in role prompts with no `## Parallel review wave` section. This is the compatibility escape hatch, not a second feature mode.
+
+When the wave is enabled (the default):
 
 - After `test` passes, the run enters `qa`. The lead dispatches `qa` and `adversary` together, or sequentially when the host cannot run them together. QA writes only `qa.md` with `VERDICT: PASS`; adversary writes only `adversary.md` with an integer `BLOCKERS: 0`.
 - The `qa` gate is a **barrier**. Both artifacts are checked in the fixed order `qa`, then `adversary`; a missing artifact or failing footer keeps the run in `qa`. A passing `qa.md` alone never advances the run. The denial names every failing member and artifact.
@@ -220,15 +228,15 @@ When enabled:
 - **Fallback:** if the host serializes child sessions or a reviewer fails to start, run the missing reviewer sequentially in the same `qa` phase. The barrier only checks artifact contents, so either completion order works and both artifacts are still required. This is the supported fallback.
 - Lifecycle events `review.wave.started`, `review.wave.denied`, and `review.wave.completed` and a `## Review wave` section in `team report` record the wave. Loop lines gain a `[role]` suffix only for reviewer retries.
 
-If `qa` or `adversary` is listed in `roles.disabled`, setup warns at `reviews.parallel` and treats the wave as disabled; sequential mode applies and no unregistered reviewer is required. Changing the option during an open run is unsupported — finish or restart the run before toggling it.
+If `qa` or `adversary` is listed in `roles.disabled`, setup emits one warning at `reviews.parallel` and treats the wave as disabled; sequential mode applies and no artifact is requested from the unregistered reviewer. Disabled review phases are skipped in both the default and explicit-`false` pipelines: with `adversary` disabled the advance is `test -> qa -> docs` and returns `skipped: ["adversary"]`; with `qa` disabled it is `test -> adversary -> docs`; with both disabled it is `test -> docs`. `team_status.next_action` names the skipped phases, and a run already sitting in a disabled review phase reports that no review artifact is required. `team_rewind` to a disabled review role is rejected with `review_role_disabled` before any state or loop change. Changing the option during an open run is unsupported — finish or restart the run before toggling it. An open run resumed after upgrading to `0.3.0` uses the new default; set `reviews.parallel:false` before reloading if you need the sequential pipeline.
 
-Known limitations in `0.2.0`:
+Known limitations in `0.3.0`:
 
 - A rewind to `qa` does not delete, move, archive, or freshness-check existing `qa.md` and `adversary.md`. Previously passing artifacts can make the barrier immediately `ready`. Prompts require both reviewers to overwrite their own artifacts, and `started_at`/`generation` show re-entry, but the gate does not enforce freshness.
 - Reviewer artifact ownership is prompt-level. The barrier verifies the two files' contents, not which agent wrote them, so run trusted agents and do not rely on the wave for review independence against a hostile or misconfigured writer.
 - Concurrent duplicate `team_advance` calls can both apply the same stale `qa -> docs` transition. Let one advance finish before re-reading status and retrying.
 - Host child-session overlap was verified in a two-session spike (~10.45s). Two-process shared-WAL safety and the sequential fallback are tested; provider rate limits or host scheduling can still serialize reviewers, in which case the fallback applies.
-- Upgrading to `0.2.0` applies migration 3, which rebuilds the `loops` table. Back up `.team/team.db` first. Legacy loop rows whose `run_id` is missing from `runs` make the migration fail safely and roll back; clean them up before retrying.
+- `0.3.0` adds no schema migration; schema version remains 3. Upgrading from a pre-`0.2.0` database applies migration 3, which rebuilds the `loops` table. Back up `.team/team.db` first. Legacy loop rows whose `run_id` is missing from `runs` make the migration fail safely and roll back; clean them up before retrying.
 
 ## Human approvals
 
@@ -290,7 +298,7 @@ This repository can be loaded directly during development through `.opencode/plu
 
 ### Developing the plugin with itself
 
-Yes, you can use the plugin to develop the plugin. OpenCode in this checkout already loads the local source through `.opencode/plugins/delivery-team/index.ts`; do not configure the published `github:...#v0.2.0` package for self-development, or you will run the released code instead of your working tree.
+Yes, you can use the plugin to develop the plugin. OpenCode in this checkout already loads the local source through `.opencode/plugins/delivery-team/index.ts`; do not configure the published `github:...#v0.3.0` package for self-development, or you will run the released code instead of your working tree.
 
 1. Start with a clean branch and run `/team` from this repository.
 2. Let the lead drive the normal phase gates. Source edits are blocked before `implement`; the developer and tester edit and run the project's Stack Profile commands.
@@ -310,11 +318,14 @@ Self-development uses the same `.team/` data root as other runs in this checkout
 ## Limitations
 
 - No dashboard, OpenTelemetry exporter, or automatic prompt/lesson approval.
-- Worktrees are optional and intentionally manual to clean up.
+- Review-wave artifacts are not freshness-checked. A rewind to `qa` can leave previously passing `qa.md`/`adversary.md` and make the barrier immediately ready.
+- Worktrees are opt-in, never created automatically, and never cleaned up automatically; use `team runs` and remove them manually.
+- Disabled review roles (`qa`, `adversary`) are skipped, but other disabled roles can still own a phase with no registered agent and trap a run. Disable non-review roles only with a manual recovery plan.
+- An approved local prompt override (`.team/prompts/<role>.md`) can be stale relative to new built-in wording after an upgrade. Runtime review-wave guidance is still appended, but re-approve or remove the override to pick up base-prompt changes.
 - Prompt approvals require an OpenCode restart.
 - The plugin is developed and verified against OpenCode `2.2.0`; newer host releases require a compatibility check.
 - Live evals require an available model/provider; the unit suite uses a deterministic fake runner.
-- The manual `/team` quick start has not been re-verified for `0.2.0`; it remains a release-checklist item. Automated tests and the local quality gate are the current evidence.
+- The manual `/team` quick start has not been re-verified for `0.3.0`; it remains a release-checklist item and blocks `v1.0.0`. Automated tests and the local quality gate are the current evidence.
 
 ## Development
 

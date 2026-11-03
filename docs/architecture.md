@@ -25,11 +25,11 @@ A run moves through:
 
 `brainstorm -> spec -> plan -> implement -> test -> qa -> adversary -> docs -> retro -> done`
 
-With `reviews.parallel` enabled, `qa` becomes a two-artifact review wave and the separate `adversary` phase is skipped:
+By default (`reviews.parallel:true`), `qa` becomes a two-artifact review wave and the separate `adversary` phase is skipped:
 
 `brainstorm -> spec -> plan -> implement -> test -> qa (qa.md + adversary.md barrier) -> docs -> retro -> done`
 
-The default remains fully sequential, and the wave can be turned off without changing existing runs.
+Explicit `reviews.parallel:false` restores the exact pre-M8 sequential pipeline and base prompts. There is no per-run mode snapshot: a resumed run uses the live config.
 
 Phase ownership is fixed:
 
@@ -53,14 +53,18 @@ The spec subagent owns both `spec.md` and `plan.md`. The `plan` phase is verific
 
 ## Review wave
 
-`src/state/reviews.ts` is a pure, read-only helper for the optional parallel review wave. It owns the member list and artifact names, `qa -> docs` advance target, barrier evaluation, the additive `review_wave` status payload, and the shared gate/status serializers. It does not write files, loops, or events.
+`src/state/reviews.ts` is a pure, read-only helper for the parallel review wave (default; explicit `reviews.parallel:false` disables it). It owns the member list and artifact names, `qa -> docs` advance target, barrier evaluation, the additive `review_wave` status payload, and the shared gate/status serializers. It does not write files, loops, or events.
 
 - **Barrier.** `evaluateReviewBarrier` calls `validatePhaseGate` for `qa` and then `adversary` in fixed order with no short-circuit. The top-level result uses the first failing member for `code`/`artifact`/`artifact_path`/`footer` and aggregates every failing member in the message; `members` always contains both outcomes. A missing member artifact does not stop the other member from being evaluated.
-- **Advance.** `team_advance` uses the barrier only when the effective option is true and the open run is in `qa`; it then targets `docs`. Every other phase keeps `nextPhase()` and the existing single-artifact gate. On denial it keeps the `gate_denied` failure shape, emits `gate.denied`, and adds `review.wave.denied`; on success it writes one `qa -> docs` transition and emits `phase.advanced` plus `review.wave.completed`. Entering `qa` from `test` emits `review.wave.started` with `cause: "advance"`.
+- **Advance.** `team_advance` uses the barrier only when the effective option is true and the open run is in `qa`; it then targets `docs`. Every other phase keeps `nextPhase()` and the existing single-artifact gate. On denial it keeps the `gate_denied` failure shape, emits `gate.denied`, and adds `review.wave.denied`; on success it writes one `qa -> docs` transition and emits `phase.advanced` plus `review.wave.completed`. Entering `qa` from `test` emits `review.wave.started` with `cause: "advance"`. When the wave is off, a `qa` or `adversary` phase whose role is in `roles.disabled` is skipped: the advance omits that artifact and reports it in `skipped`, status says no review artifact is required, and `team_rewind` to it returns `review_role_disabled` before any state change.
 - **Status.** `team_start` always advertises the additive `review_wave` object (`enabled`, `active`, `ready`, `phase`, `members`, `artifacts`, `generation`; `started_at` while active). `team_status` adds per-member gates and loops, keeps `loops` limited to phase-level rows, adds `role_loops` only when role rows exist, and makes the barrier the top-level `gate` while active. `counters.loops` sums every row.
 - **Rewind.** While enabled, `team_rewind(to="adversary")` returns `review_wave_rewind_blocked` before the earlier-phase check. A rewind to `qa` increments the wave-level `(qa, "")` counter, preserves member counters, and emits `loop.incremented`, `phase.rewound`, then `review.wave.started` with `cause: "rewind"`. The wave cap is the normal `maxLoops` check on the wave-level key; exceeding it escalates without a transition.
 - **Fallback.** The barrier checks file contents, not scheduling. If the host serializes child sessions or a reviewer fails to start, the lead runs the missing reviewer sequentially in the same `qa` phase; either completion order passes once both artifacts satisfy their footers.
 - **Ownership.** Artifact ownership remains a prompt/trust rule in M8. The gate verifies `qa.md` and `adversary.md`, not which agent wrote them; a hard ownership gate is a deferred follow-up.
+
+## Worktrees
+
+`team_worktree` is registered in every plugin catalog. `worktrees.enabled` (default `false`) gates creation, not discovery: while disabled the tool returns `worktrees_disabled`, and enabled calls in a non-Git project or without a usable `git` return `not_git_repository` or `git_unavailable`. All three tell the lead to continue sequentially in the main checkout and not retry. Enabled creation still adds `<baseDir>/<run>-<name>` on branch `team/<run>/<name>`; worktrees are never deleted automatically.
 
 ## Role-scoped loops and migration 3
 
@@ -111,6 +115,7 @@ The eval harness copies a fixture into a temporary project, seeds the effective 
 | `src/stack/` | Stack detection, profile resolution, and commands |
 | `src/state/` | SQLite adapter, repositories, gates, tracing, reports |
 | `src/state/reviews.ts` | Review-wave members, advance target, barrier, status payload, and serializers |
+| `src/state/worktrees.ts` | Worktree Git probing, creation, and fallback error contracts |
 | `src/tools/`, `src/hooks/`, `src/commands.ts` | Orchestration surface and host hooks |
 | `src/cli/` | Human-only CLI |
 | `src/evals/` | Task loading, criteria, runner, snapshots, and reports |
