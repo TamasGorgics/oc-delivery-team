@@ -248,6 +248,35 @@ describe("database adapter and migrations", () => {
     }
   });
 
+  test("migration 3 folds a drifted role column into the phase scope", async () => {
+    const dbPath = tempDb();
+    (await openDatabase(dbPath, { migrations: [MIGRATIONS[0], MIGRATIONS[1]] })).db.close();
+
+    const raw = await openDatabase(dbPath, { migrate: false });
+    try {
+      insertRun(raw.db);
+      raw.db.exec("DROP TABLE loops");
+      raw.db.exec(
+        "CREATE TABLE loops (run_id TEXT NOT NULL, phase TEXT NOT NULL, role TEXT NOT NULL DEFAULT '', count INTEGER NOT NULL DEFAULT 0)",
+      );
+      raw.db.run("INSERT INTO loops (run_id, phase, role, count) VALUES (?, ?, ?, ?)", ["run-1", "qa", "qa", 1]);
+      raw.db.run("INSERT INTO loops (run_id, phase, role, count) VALUES (?, ?, ?, ?)", ["run-1", "qa", "adversary", 2]);
+      raw.db.run("INSERT INTO loops (run_id, phase, role, count) VALUES (?, ?, ?, ?)", ["run-1", "qa", "", 4]);
+    } finally {
+      raw.db.close();
+    }
+
+    const upgraded = await openDatabase(dbPath);
+    try {
+      expect(upgraded.migration).toEqual({ fromVersion: 2, toVersion: 3, applied: [3] });
+      expect(new RunRepository(upgraded.db).getLoops("run-1")).toEqual([
+        { run_id: "run-1", phase: "qa", role: "", count: 7 },
+      ]);
+    } finally {
+      upgraded.db.close();
+    }
+  });
+
   test("rolls back a migration whose verify fails and does not record the version", async () => {
     const dbPath = tempDb();
     const failing: Migration = {
@@ -267,6 +296,41 @@ describe("database adapter and migrations", () => {
       expect(reopened.migration).toEqual({ fromVersion: 3, toVersion: 3, applied: [] });
       expect(
         reopened.db.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'migration_probe'"),
+      ).toBeUndefined();
+    } finally {
+      reopened.db.close();
+    }
+  });
+
+  test("migration 3 rolls back a failed legacy copy and leaves the old table and version intact", async () => {
+    const dbPath = tempDb();
+    (await openDatabase(dbPath, { migrations: [MIGRATIONS[0], MIGRATIONS[1]] })).db.close();
+
+    const raw = await openDatabase(dbPath, { migrate: false });
+    try {
+      insertRun(raw.db);
+      raw.db.exec("DROP TABLE loops");
+      raw.db.exec("CREATE TABLE loops (run_id TEXT NOT NULL, phase TEXT NOT NULL)");
+      raw.db.run("INSERT INTO loops (run_id, phase) VALUES (?, ?)", ["run-1", "qa"]);
+    } finally {
+      raw.db.close();
+    }
+
+    await expect(openDatabase(dbPath)).rejects.toThrow();
+
+    const reopened = await openDatabase(dbPath, { migrate: false });
+    try {
+      expect(
+        reopened.db.all<{ version: number }>("SELECT version FROM schema_migrations ORDER BY version")
+          .map((row) => Number(row.version)),
+      ).toEqual([1, 2]);
+      expect(reopened.db.all<{ name: string }>("PRAGMA table_info(loops)").map((row) => row.name))
+        .toEqual(["run_id", "phase"]);
+      expect(reopened.db.all("SELECT run_id, phase FROM loops")).toEqual([
+        { run_id: "run-1", phase: "qa" },
+      ]);
+      expect(
+        reopened.db.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'loops_v3'"),
       ).toBeUndefined();
     } finally {
       reopened.db.close();

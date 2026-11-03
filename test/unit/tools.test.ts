@@ -124,6 +124,15 @@ async function loopCounts(harness: Harness, runId: string): Promise<Record<strin
   }
 }
 
+async function transitionTargets(harness: Harness, runId: string): Promise<string[]> {
+  const { db } = await openDatabase(path.join(harness.rootDir, "team.db"));
+  try {
+    return new RunRepository(db).getTransitions(runId).map((transition) => transition.to_phase);
+  } finally {
+    db.close();
+  }
+}
+
 async function readRun(harness: Harness, runId: string) {
   const { db } = await openDatabase(path.join(harness.rootDir, "team.db"));
   try {
@@ -516,6 +525,11 @@ describe("parallel review wave", () => {
     const loop = await call(harness, "team_loop", { run, reason: "retry" });
     expect(loop).toMatchObject({ loop_count: 1 });
     expect(loop.role).toBeUndefined();
+    const sequentialLoopEvents = (await runEvents(harness, run)).filter(
+      (event) => event.kind === "loop.incremented",
+    );
+    expect(sequentialLoopEvents).toHaveLength(1);
+    expect(sequentialLoopEvents[0].data).not.toHaveProperty("role");
 
     await driveToQa(harness, run);
     const inQa = await call(harness, "team_status", { run });
@@ -534,8 +548,16 @@ describe("parallel review wave", () => {
     writeArtifact(harness, run, "qa.md", footer(["VERDICT: PASS"]));
     expect(await call(harness, "team_advance", { run })).toMatchObject({ ok: true, to: "adversary" });
 
+    writeArtifact(harness, run, "adversary.md", footer(["BLOCKERS: 0"]));
+    expect(await call(harness, "team_advance", { run })).toMatchObject({ ok: true, to: "docs" });
+    expect(await call(harness, "team_rewind", { run, to: "adversary", reason: "sequential retry" }))
+      .toMatchObject({ ok: true, from: "docs", to: "adversary" });
+
     const events = await runEvents(harness, run);
     expect(events.filter((event) => event.kind.startsWith("review.wave."))).toEqual([]);
+    expect(events.filter((event) => event.kind === "loop.incremented").every(
+      (event) => !("role" in event.data),
+    )).toBe(true);
     const statusText = ((await harness.fake.invokeTool("team_status", { run })).content as Array<{ text: string }>)[0]!.text;
     expect(statusText).not.toContain("Review wave:");
   });
@@ -674,6 +696,131 @@ describe("parallel review wave", () => {
     expect(await call(harness, "team_advance", { run })).toMatchObject({ ok: true, to: "retro" });
     writeArtifact(harness, run, "retro.md", "# Retro\n");
     expect(await call(harness, "team_advance", { run })).toMatchObject({ ok: true, to: "done", terminal: true });
+  });
+
+  test("denies either missing member and aggregates both failures without changing state or loops", async () => {
+    const harness = await setup({ config: { reviews: { parallel: true } } });
+    const run = (await call(harness, "team_start", { title: "Wave denials" })).run as string;
+    const qaPath = path.join(harness.rootDir, "runs", run, "qa.md");
+    const adversaryPath = path.join(harness.rootDir, "runs", run, "adversary.md");
+    await driveToQa(harness, run);
+
+    const transitionsBefore = await transitionTargets(harness, run);
+    const loopsBefore = await loopCounts(harness, run);
+    expect(loopsBefore).toEqual({});
+
+    writeArtifact(harness, run, "adversary.md", footer(["BLOCKERS: 0"]));
+    const missingQa = await call(harness, "team_advance", { run });
+    expect(missingQa).toMatchObject({
+      ok: false,
+      code: "gate_denied",
+      phase: "qa",
+      gate: { ok: false, code: "missing_artifact", artifact: "qa.md", artifact_path: qaPath },
+    });
+    expect(missingQa.gate.members.map((member: any) => [member.role, member.ok, member.code])).toEqual([
+      ["qa", false, "missing_artifact"],
+      ["adversary", true, "ok"],
+    ]);
+    expect(missingQa.gate.members[1].footer).toEqual({ BLOCKERS: "0" });
+    expect((await readRun(harness, run))?.phase).toBe("qa");
+
+    let denied = (await runEvents(harness, run)).filter((event) => event.kind === "review.wave.denied");
+    expect(denied).toHaveLength(1);
+    expect(denied[0].data.failing_members).toEqual([
+      {
+        role: "qa",
+        code: "missing_artifact",
+        artifact: "qa.md",
+        artifact_path: qaPath,
+        message: expect.any(String),
+      },
+    ]);
+
+    writeArtifact(harness, run, "qa.md", footer(["VERDICT: FAIL"]));
+    writeArtifact(harness, run, "adversary.md", footer(["BLOCKERS: 2"]));
+    const both = await call(harness, "team_advance", { run });
+    expect(both).toMatchObject({
+      ok: false,
+      code: "gate_denied",
+      phase: "qa",
+      gate: {
+        ok: false,
+        code: "verdict_not_pass",
+        artifact: "qa.md",
+        artifact_path: qaPath,
+        footer: { VERDICT: "FAIL" },
+      },
+    });
+    expect(both.gate.members.map((member: any) => member.code)).toEqual(["verdict_not_pass", "blockers"]);
+    expect(both.gate.members.map((member: any) => member.ok)).toEqual([false, false]);
+    expect(both.gate.members[1].artifact_path).toBe(adversaryPath);
+
+    denied = (await runEvents(harness, run)).filter((event) => event.kind === "review.wave.denied");
+    expect(denied).toHaveLength(2);
+    expect(denied[1].data).toMatchObject({ gate_code: "verdict_not_pass", ready: false, generation: 1 });
+    expect(denied[1].data.failing_members.map((member: any) => member.role)).toEqual(["qa", "adversary"]);
+    expect(denied[1].data.failing_members.map((member: any) => member.code)).toEqual([
+      "verdict_not_pass",
+      "blockers",
+    ]);
+
+    expect(await loopCounts(harness, run)).toEqual(loopsBefore);
+    expect(await transitionTargets(harness, run)).toEqual(transitionsBefore);
+    expect((await readRun(harness, run))?.phase).toBe("qa");
+  });
+
+  test("accepts sequentially written artifacts as the fallback path", async () => {
+    const harness = await setup({ config: { reviews: { parallel: true } } });
+    const run = (await call(harness, "team_start", { title: "Wave fallback" })).run as string;
+    await driveToQa(harness, run);
+
+    writeArtifact(harness, run, "qa.md", footer(["VERDICT: PASS"]));
+    let status = await call(harness, "team_status", { run });
+    expect(status.review_wave).toMatchObject({ enabled: true, active: true, ready: false });
+    expect(status.review_wave.members[0].gate).toMatchObject({ ok: true, code: "ok" });
+    expect(status.review_wave.members[1].gate).toMatchObject({ ok: false, code: "missing_artifact" });
+    expect(status.next_action).toContain("adversary");
+
+    writeArtifact(harness, run, "adversary.md", footer(["BLOCKERS: 0"]));
+    status = await call(harness, "team_status", { run });
+    expect(status.review_wave).toMatchObject({ enabled: true, active: true, ready: true });
+    expect(status.review_wave.members.map((member: any) => member.gate?.ok)).toEqual([true, true]);
+    expect(status.next_action).toContain("team_advance");
+
+    expect(await call(harness, "team_advance", { run }))
+      .toMatchObject({ ok: true, from: "qa", to: "docs", phase: "docs" });
+  });
+
+  test("accepts an explicit matching reviewer role and rejects an invalid role value", async () => {
+    const harness = await setup({ config: { reviews: { parallel: true } } });
+    const run = (await call(harness, "team_start", { title: "Explicit role" })).run as string;
+    await driveToQa(harness, run);
+
+    expect(await call(harness, "team_loop", { run, reason: "same role", role: "qa" }, { agent: "qa" }))
+      .toMatchObject({ ok: true, role: "qa", loop_count: 1, remaining: 2, escalate: false });
+    expect(await call(harness, "team_loop", { run, reason: "bad value", role: "tester" }, { agent: "qa" }))
+      .toMatchObject({ ok: false, code: "invalid_input" });
+    expect(await loopCounts(harness, run)).toEqual({ "qa:qa": 1 });
+
+    const events = await runEvents(harness, run);
+    const incremented = events.filter((event) => event.kind === "loop.incremented");
+    expect(incremented[0].data).toMatchObject({ phase: "qa", role: "qa", agent: "qa" });
+  });
+
+  test("keeps phase-level loop keys outside the active wave", async () => {
+    const enabled = await setup({ config: { reviews: { parallel: true } } });
+    const run = (await call(enabled, "team_start", { title: "Phase loop" })).run as string;
+    const phaseLoop = await call(enabled, "team_loop", { run, reason: "phase-level" }, { agent: "team-lead" });
+    expect(phaseLoop).toMatchObject({ ok: true, loop_count: 1 });
+    expect(phaseLoop.role).toBeUndefined();
+    expect(await loopCounts(enabled, run)).toEqual({ "brainstorm:": 1 });
+
+    const sequential = await setup();
+    const sequentialRun = (await call(sequential, "team_start", { title: "Sequential qa" })).run as string;
+    await driveToQa(sequential, sequentialRun);
+    expect(await call(sequential, "team_loop", { run: sequentialRun, reason: "qa retry" }, { agent: "qa" }))
+      .toMatchObject({ ok: true, loop_count: 1 });
+    expect(await loopCounts(sequential, sequentialRun)).toEqual({ "qa:": 1 });
   });
 
   test("wave rewind blocks adversary, restarts qa with the wave counter, and escalates at the cap", async () => {

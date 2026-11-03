@@ -169,6 +169,26 @@ describe("plugin configuration", () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]?.message).toContain("adversary");
     expect(warnings[0]?.message).toContain("disabled");
+
+    const qaDisabled = parseConfig({
+      roles: { disabled: ["qa"] },
+      reviews: { parallel: true },
+    }, "/workspace/project");
+    expect(qaDisabled.reviews).toEqual({ parallel: false });
+    const qaWarnings = qaDisabled.warnings.filter((warning) => warning.path === "reviews.parallel");
+    expect(qaWarnings).toHaveLength(1);
+    expect(qaWarnings[0]?.message).toContain("qa");
+    expect(qaWarnings[0]?.message).toContain("disabled");
+
+    const bothDisabled = parseConfig({
+      roles: { disabled: ["qa", "adversary"] },
+      reviews: { parallel: true },
+    }, "/workspace/project");
+    expect(bothDisabled.reviews).toEqual({ parallel: false });
+    const bothWarnings = bothDisabled.warnings.filter((warning) => warning.path === "reviews.parallel");
+    expect(bothWarnings).toHaveLength(1);
+    expect(bothWarnings[0]?.message).toContain("qa");
+    expect(bothWarnings[0]?.message).toContain("adversary");
   });
 
   test("accepts absolute roots and tolerates non-object plugin options", () => {
