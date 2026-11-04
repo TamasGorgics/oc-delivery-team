@@ -14,6 +14,18 @@ export const ROLE_IDS = [
 
 export type RoleId = (typeof ROLE_IDS)[number];
 
+export const ROLE_COLORS: Readonly<Record<RoleId, string>> = {
+  "team-lead": "#8B5CF6",
+  researcher: "#0EA5E9",
+  spec: "#2563EB",
+  developer: "#16A34A",
+  tester: "#CA8A04",
+  qa: "#DB2777",
+  adversary: "#DC2626",
+  docs: "#0D9488",
+  retro: "#EA580C",
+};
+
 export const MODEL_TIERS = ["reasoning", "coding", "fast"] as const;
 
 export type ModelTier = (typeof MODEL_TIERS)[number];
@@ -32,6 +44,7 @@ export interface RoleDefinition {
   readonly id: RoleId;
   readonly name: string;
   readonly description: string;
+  readonly color: string;
   readonly mode: RoleMode;
   readonly tier: ModelTier;
   /** Undefined means no step limit. */
@@ -52,6 +65,7 @@ export const ROLES: readonly RoleDefinition[] = [
     id: "team-lead",
     name: "Team Lead",
     description: "Orchestrates the delivery pipeline, enforces phase gates, and never writes code.",
+    color: ROLE_COLORS["team-lead"],
     mode: "primary",
     tier: "reasoning",
     artifacts: [],
@@ -75,6 +89,7 @@ export const ROLES: readonly RoleDefinition[] = [
     id: "researcher",
     name: "Researcher",
     description: "Explores options, prior art, constraints, and risks without changing the project.",
+    color: ROLE_COLORS.researcher,
     mode: "subagent",
     tier: "fast",
     maxSteps: 40,
@@ -99,6 +114,7 @@ export const ROLES: readonly RoleDefinition[] = [
     id: "spec",
     name: "Spec",
     description: "Turns the brainstorm into a specification and implementation plan.",
+    color: ROLE_COLORS.spec,
     mode: "subagent",
     tier: "reasoning",
     maxSteps: 40,
@@ -114,6 +130,7 @@ export const ROLES: readonly RoleDefinition[] = [
     id: "developer",
     name: "Developer",
     description: "Implements the approved plan and records implementation notes.",
+    color: ROLE_COLORS.developer,
     mode: "subagent",
     tier: "coding",
     maxSteps: 80,
@@ -129,6 +146,7 @@ export const ROLES: readonly RoleDefinition[] = [
     id: "tester",
     name: "Tester",
     description: "Writes and runs tests from the acceptance criteria without changing source.",
+    color: ROLE_COLORS.tester,
     mode: "subagent",
     tier: "coding",
     maxSteps: 50,
@@ -144,6 +162,7 @@ export const ROLES: readonly RoleDefinition[] = [
     id: "qa",
     name: "Quality Assurance",
     description: "Verifies behavior against the specification and records a verdict.",
+    color: ROLE_COLORS.qa,
     mode: "subagent",
     tier: "coding",
     maxSteps: 40,
@@ -159,6 +178,7 @@ export const ROLES: readonly RoleDefinition[] = [
     id: "adversary",
     name: "Adversary",
     description: "Tries to break the implementation: bugs, edge cases, security, and spec gaps.",
+    color: ROLE_COLORS.adversary,
     mode: "subagent",
     tier: "reasoning",
     maxSteps: 60,
@@ -174,6 +194,7 @@ export const ROLES: readonly RoleDefinition[] = [
     id: "docs",
     name: "Docs",
     description: "Updates user-facing documentation to match the delivered behavior.",
+    color: ROLE_COLORS.docs,
     mode: "subagent",
     tier: "fast",
     maxSteps: 40,
@@ -189,6 +210,7 @@ export const ROLES: readonly RoleDefinition[] = [
     id: "retro",
     name: "Retrospective",
     description: "Reviews the completed run and records process improvements.",
+    color: ROLE_COLORS.retro,
     mode: "subagent",
     tier: "reasoning",
     maxSteps: 40,

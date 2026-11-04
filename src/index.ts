@@ -296,6 +296,7 @@ function applyRoleDraft(
 ): void {
   setAgentName(draft, role.name);
   draft.description = role.description;
+  draft.color = config.roles.colors[role.id] ?? role.color;
   draft.mode = role.mode;
   draft.hidden = false;
   draft.system = resolvePrompt(config.rootDir, role.id, prompts, {

@@ -41,6 +41,7 @@ export interface StackConfig {
 
 export interface RolesConfig {
   readonly disabled: readonly RoleId[];
+  readonly colors: Partial<Record<RoleId, string>>;
 }
 
 export interface ReviewsConfig {
@@ -98,7 +99,7 @@ const TOP_LEVEL_KEYS = new Set([
 
 const LESSONS_KEYS = new Set(["topN", "budgetChars"]);
 const STACK_KEYS = new Set(["detect", "overrides"]);
-const ROLES_KEYS = new Set(["disabled"]);
+const ROLES_KEYS = new Set(["disabled", "colors"]);
 const REVIEWS_KEYS = new Set(["parallel"]);
 const GATING_KEYS = new Set(["enabled", "strict", "editTools", "pathKeys"]);
 const TRACE_KEYS = new Set(["captureInput", "previewChars"]);
@@ -150,6 +151,7 @@ export function parseConfig(
   const rolesRaw = readObject(options.roles, "roles", warnings);
   warnUnknown(rolesRaw, ROLES_KEYS, "roles", warnings);
   const disabled = readRoleList(rolesRaw.disabled, warnings);
+  const colors = readRoleColors(rolesRaw.colors, warnings);
 
   const reviewsRaw = readObject(options.reviews, "reviews", warnings);
   warnUnknown(reviewsRaw, REVIEWS_KEYS, "reviews", warnings);
@@ -201,7 +203,7 @@ export function parseConfig(
     lessons,
     models: parseModels(options.models, warnings),
     stack,
-    roles: { disabled },
+    roles: { disabled, colors },
     reviews: { parallel },
     gating,
     trace,
@@ -345,6 +347,36 @@ function readRoleList(raw: unknown, warnings: ConfigWarning[]): RoleId[] {
     } else {
       warnings.push({ path: "roles.disabled", message: `Unknown role ${JSON.stringify(entry)}; ignored.` });
     }
+  }
+  return result;
+}
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+function readRoleColors(raw: unknown, warnings: ConfigWarning[]): Partial<Record<RoleId, string>> {
+  if (raw === undefined) return {};
+  if (!isRecord(raw)) {
+    warnings.push({ path: "roles.colors", message: "Must be an object; ignored." });
+    return {};
+  }
+
+  const result: Partial<Record<RoleId, string>> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!isRoleId(key)) {
+      warnings.push({
+        path: `roles.colors.${key}`,
+        message: `Unknown role ${JSON.stringify(key)}; ignored.`,
+      });
+      continue;
+    }
+    if (typeof value !== "string" || !HEX_COLOR.test(value)) {
+      warnings.push({
+        path: `roles.colors.${key}`,
+        message: "Must be a six-digit hex color (e.g. #8B5CF6); using default.",
+      });
+      continue;
+    }
+    result[key] = value;
   }
   return result;
 }

@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { PHASE_OWNERS } from "../../src/state/phases";
-import { enabledRoles, ROLE_BY_ID, ROLE_IDS, rolePermissionRules } from "../../src/roles";
+import {
+  enabledRoles,
+  ROLE_BY_ID,
+  ROLE_COLORS,
+  ROLE_IDS,
+  ROLES,
+  rolePermissionRules,
+  type RoleId,
+} from "../../src/roles";
 
 describe("role definitions", () => {
   test("defines all nine roles and their default modes, tiers, artifacts, and step limits", () => {
@@ -27,6 +35,28 @@ describe("role definitions", () => {
     expect(ROLE_BY_ID.retro).toMatchObject({ tier: "reasoning", maxSteps: 40, writeScope: "root" });
     expect(ROLE_IDS.every((id) => ROLE_BY_ID[id].promptId === id)).toBe(true);
     expect(ROLE_IDS.every((id) => ROLE_BY_ID[id].toolNeeds.length > 0)).toBe(true);
+  });
+
+  test("gives every role a distinct six-digit hex color", () => {
+    const expected: Record<RoleId, string> = {
+      "team-lead": "#8B5CF6",
+      researcher: "#0EA5E9",
+      spec: "#2563EB",
+      developer: "#16A34A",
+      tester: "#CA8A04",
+      qa: "#DB2777",
+      adversary: "#DC2626",
+      docs: "#0D9488",
+      retro: "#EA580C",
+    };
+
+    expect(ROLE_COLORS).toEqual(expected);
+    for (const id of ROLE_IDS) {
+      const color = ROLE_BY_ID[id].color;
+      expect(color).toBe(expected[id]);
+      expect(color).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
+    expect(new Set(ROLES.map((role) => role.color)).size).toBe(ROLE_IDS.length);
   });
 
   test("maps every phase to the owning team role", () => {

@@ -7,7 +7,7 @@ import { runTeamCli } from "../../src/cli/team";
 import { getDefaultPrompt, withRuntimeGuidance } from "../../src/prompts";
 import { REVIEW_WAVE_GUIDANCE, REVIEW_WAVE_HEADING } from "../../src/prompts/review-wave";
 import { promptProposalSha } from "../../src/prompts/proposals";
-import { ROLE_IDS } from "../../src/roles";
+import { ROLE_COLORS, ROLE_IDS } from "../../src/roles";
 import { openDatabase } from "../../src/state/db";
 import { PromptRepository } from "../../src/state/prompts";
 import { createFakeContext, fakeModel } from "../fakes/ctx";
@@ -44,7 +44,10 @@ describe("delivery-team plugin registration", () => {
     expect(fake.state.reloadCount).toBe(1);
     expect(fake.state.commandReloadCount).toBe(1);
     expect(getDeliveryTeamSnapshot(fake.context)?.commands).toEqual(["team", "team-status", "team-retro"]);
-    for (const id of ROLE_IDS) expect(fake.state.agents.get(id)?.model).toBeUndefined();
+    for (const id of ROLE_IDS) {
+      expect(fake.state.agents.get(id)?.model).toBeUndefined();
+      expect(fake.state.agents.get(id)?.color).toBe(ROLE_COLORS[id]);
+    }
 
     const snapshot = getDeliveryTeamSnapshot(fake.context);
     expect(snapshot?.models.roles.developer?.source).toBe("inherit");
@@ -77,6 +80,29 @@ describe("delivery-team plugin registration", () => {
     await cleanupB();
     expect(fake.state.agentTransforms).toHaveLength(0);
     expect(fake.state.commands.size).toBe(0);
+  });
+
+  test("applies default and overridden role colors to enabled agents only", async () => {
+    const fake = createFakeContext({
+      projectDirectory: tempProject(),
+      options: {
+        roles: {
+          disabled: ["docs"],
+          colors: { developer: "#123ABC", docs: "#FFFFFF" },
+        },
+      },
+    });
+    const cleanup = await deliveryTeam.setup(fake.context);
+    assertCleanup(cleanup);
+
+    for (const id of ROLE_IDS.filter((role) => role !== "docs")) {
+      expect(fake.state.agents.get(id)?.color).toBe(
+        id === "developer" ? "#123ABC" : ROLE_COLORS[id],
+      );
+    }
+    expect(fake.state.agents.has("docs")).toBe(false);
+
+    await cleanup();
   });
 
   test("adds review wave guidance by default and only omits it for explicit false", async () => {

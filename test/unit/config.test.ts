@@ -11,7 +11,7 @@ describe("plugin configuration", () => {
     expect(config.maxLoops).toBe(3);
     expect(config.lessons).toEqual({ topN: 8, budgetChars: 4000 });
     expect(config.stack).toEqual({ detect: true, overrides: undefined });
-    expect(config.roles.disabled).toEqual([]);
+    expect(config.roles).toEqual({ disabled: [], colors: {} });
     expect(config.reviews).toEqual({ parallel: true });
     expect(config.gating).toEqual({
       enabled: true,
@@ -40,7 +40,7 @@ describe("plugin configuration", () => {
       maxLoops: 5,
       lessons: { topN: 4, budgetChars: 2500 },
       stack: { detect: false, overrides: { version: 1 } },
-      roles: { disabled: ["docs", "docs", "retro"] },
+      roles: { disabled: ["docs", "docs", "retro"], colors: { developer: "#123ABC" } },
       gating: { enabled: false, strict: true, editTools: [] },
       trace: { captureInput: true, previewChars: 120 },
       worktrees: { enabled: true, baseDir: "../worktrees" },
@@ -60,7 +60,7 @@ describe("plugin configuration", () => {
     expect(config.maxLoops).toBe(5);
     expect(config.lessons).toEqual({ topN: 4, budgetChars: 2500 });
     expect(config.stack).toEqual({ detect: false, overrides: { version: 1 } });
-    expect(config.roles.disabled).toEqual(["docs", "retro"]);
+    expect(config.roles).toEqual({ disabled: ["docs", "retro"], colors: { developer: "#123ABC" } });
     expect(config.gating).toEqual({ enabled: false, strict: true, editTools: [], pathKeys: {} });
     expect(config.trace).toEqual({ captureInput: true, previewChars: 120 });
     expect(config.worktrees).toEqual({ enabled: true, baseDir: "../worktrees" });
@@ -76,6 +76,53 @@ describe("plugin configuration", () => {
     expect(config.models.diversity).toBe(false);
     expect(config.models.auto).toBe(true);
     expect(config.warnings).toEqual([]);
+  });
+
+  test("parses role color overrides and warns on invalid entries", () => {
+    const valid = parseConfig({
+      roles: { colors: { developer: "#123ABC", "team-lead": "#8b5cf6" } },
+    }, "/workspace/project");
+    expect(valid.roles).toEqual({
+      disabled: [],
+      colors: { developer: "#123ABC", "team-lead": "#8b5cf6" },
+    });
+    expect(valid.warnings).toEqual([]);
+
+    const mixed = parseConfig({
+      roles: {
+        disabled: ["docs"],
+        colors: {
+          developer: "green",
+          tester: "#12345",
+          qa: 7,
+          "not-a-role": "#123456",
+        },
+      },
+    }, "/workspace/project");
+
+    expect(mixed.roles.disabled).toEqual(["docs"]);
+    expect(mixed.roles.colors).toEqual({});
+    expect(mixed.maxLoops).toBe(3);
+    expect(mixed.warnings).toHaveLength(4);
+    for (const role of ["developer", "tester", "qa"]) {
+      expect(mixed.warnings).toContainEqual({
+        path: `roles.colors.${role}`,
+        message: "Must be a six-digit hex color (e.g. #8B5CF6); using default.",
+      });
+    }
+    expect(mixed.warnings).toContainEqual({
+      path: "roles.colors.not-a-role",
+      message: 'Unknown role "not-a-role"; ignored.',
+    });
+
+    const nonObject = parseConfig({
+      roles: { disabled: ["qa"], colors: "#8B5CF6" },
+    }, "/workspace/project");
+    expect(nonObject.roles).toEqual({ disabled: ["qa"], colors: {} });
+    expect(nonObject.warnings).toContainEqual({
+      path: "roles.colors",
+      message: "Must be an object; ignored.",
+    });
   });
 
   test("accepts configurable edit-tool path keys and warns on invalid entries", () => {
