@@ -1,6 +1,6 @@
 # OpenCode V2 API notes
 
-Status: M0–M8 verification complete for the default-on parallel review wave (2026-11-03). M8 is implemented, tested, and documented; the release is `0.3.0`. `v1.0.0` remains blocked on the manual `/team` verification. All V1–V18 items have an answer and a fallback. The v0.3.0 section records the default change, dogfood evidence, and verification evidence.
+Status: M0–M8 verification complete for the default-on parallel review wave (2026-11-03); `0.4.0` adds per-role agent colors (2026-11-04). M8 and the color addition are implemented, tested, and documented; the release is `0.4.0`. `v1.0.0` remains blocked on the manual `/team` verification. All V1–V18 items have an answer and a fallback. The v0.3.0 section records the default change, dogfood evidence, and verification evidence; the v0.4.0 section records the color API and override behavior.
 
 ## Toolchain and loading
 
@@ -198,3 +198,10 @@ opencode --standalone run --print-logs --auto --model opencode/deepseek-v4.1-fla
 - **Blockers fixed.** Disabled review roles trapped runs by requiring an artifact from an unregistered reviewer (`80a38c1`); the unconditional `## Disabled review roles` base-prompt section was removed (`a6122a1`), restoring `getDefaultPrompt(role, {reviewWave:false}) === getDefaultPrompt(role)`.
 - **Non-blocking findings.** A resumed disabled phase omits the current phase from `skipped`; `team_status.owner` remains the disabled role; disabled non-review roles (for example `docs`) can still trap runs (pre-existing); the local approved lead override is stale; `team prompts diff` omits runtime wave guidance (pre-existing).
 - **Verification.** `bun run typecheck` exit 0; `bun run test` 228 pass / 0 fail / 2061 expect / 27 files; `bun run test:prompts` 6 pass / 221 expect / 1 file. GitHub Actions CI (`.github/workflows/ci.yml`) runs install, typecheck, `bun test`, `bun run test:prompts`, and `npm pack --dry-run` on push to main, pull requests, and manual dispatch.
+
+## v0.4.0 role colors
+
+- **Schema.** `Agent.Info` exposes an optional `color` string in the installed `@opencode/schema` (`node_modules/@opencode/schema/dist/agent.d.ts`). The agent transform sets it in `applyRoleDraft` from `config.roles.colors[role.id] ?? role.color`.
+- **Defaults and overrides.** `ROLE_COLORS` in `src/roles.ts` supplies the palette: `team-lead` `#8B5CF6`, `researcher` `#0EA5E9`, `spec` `#2563EB`, `developer` `#16A34A`, `tester` `#CA8A04`, `qa` `#DB2777`, `adversary` `#DC2626`, `docs` `#0D9488`, `retro` `#EA580C`. `roles.colors` accepts known role ids with six-digit hex values (`#RRGGBB`); unknown role ids and invalid values emit configuration warnings and use the default, and a non-object `roles.colors` warns and is ignored.
+- **Persistence.** Colors are agent registration metadata only. There is no database migration or schema change; schema version remains 3.
+- **Verification.** The implementation run reported typecheck clean and `bun test` 231 pass / 0 fail / 2,111 expect / 27 files, plus prompt tests 6 pass / 221 expect; these results predate the documentation edits. GitHub Actions CI (`.github/workflows/ci.yml`) runs install, typecheck, `bun test`, `bun run test:prompts`, and `npm pack --dry-run` on push to main, pull requests, and manual dispatch.

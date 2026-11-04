@@ -27,7 +27,7 @@ Add the package tag to the project's `opencode.json`:
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "github:TamasGorgics/oc-delivery-team#v0.3.0",
+      "package": "github:TamasGorgics/oc-delivery-team#v0.4.0",
       "options": {
         "root": ".team",
         "maxLoops": 3
@@ -46,7 +46,7 @@ Pin the tag. To upgrade, change the tag to a newer release tag and restart OpenC
 If you want the plugin in every project, install it through OpenCode instead:
 
 ```sh
-opencode plugin add 'github:TamasGorgics/oc-delivery-team#v0.3.0'
+opencode plugin add 'github:TamasGorgics/oc-delivery-team#v0.4.0'
 opencode plugin list
 ```
 
@@ -57,14 +57,14 @@ This writes the package entry to the global OpenCode config. Edit that entry to 
 The `team` CLI is a separate executable. Install it globally from the same GitHub tag:
 
 ```sh
-npm install --global 'github:TamasGorgics/oc-delivery-team#v0.3.0'
+npm install --global 'github:TamasGorgics/oc-delivery-team#v0.4.0'
 team --help
 ```
 
 Or run it one-off without a global install:
 
 ```sh
-npx --yes --package 'github:TamasGorgics/oc-delivery-team#v0.3.0' team --help
+npx --yes --package 'github:TamasGorgics/oc-delivery-team#v0.4.0' team --help
 ```
 
 Bun must be installed and available on `PATH` because the package entry and CLI are TypeScript. To upgrade the CLI, run the install command with the new tag.
@@ -122,6 +122,7 @@ Plugin options are passed under the `options` object in `opencode.json`:
 | `stack.detect` | `true` | Detect the Stack Profile from project markers |
 | `stack.overrides` | unset | Human-supplied Stack Profile overrides |
 | `roles.disabled` | `[]` | Role ids to omit |
+| `roles.colors` | `{}` | Per-role agent colors as six-digit hex values; invalid or unknown entries warn and use the default palette |
 | `gating.enabled` | `true` | Enable phase and scope gates |
 | `gating.strict` | `false` | Block tool calls that cannot be tied to an open run |
 | `gating.editTools` | `["edit", "write", "patch"]` | Tools subject to edit gates |
@@ -130,6 +131,44 @@ Plugin options are passed under the `options` object in `opencode.json`:
 | `trace.previewChars` | `0` | Persist this many redacted output characters |
 | `worktrees.enabled` | `false` | Allow `team_worktree` to create worktrees (the tool is always registered; creation is opt-in and requires Git) |
 | `worktrees.baseDir` | `../.team-worktrees` | Base directory for Git worktrees |
+
+### Role colors
+
+Each role agent has a display color. The defaults are:
+
+| Role | Color |
+|---|---|
+| `team-lead` | `#8B5CF6` |
+| `researcher` | `#0EA5E9` |
+| `spec` | `#2563EB` |
+| `developer` | `#16A34A` |
+| `tester` | `#CA8A04` |
+| `qa` | `#DB2777` |
+| `adversary` | `#DC2626` |
+| `docs` | `#0D9488` |
+| `retro` | `#EA580C` |
+
+Override individual roles with `roles.colors`:
+
+```json
+{
+  "plugins": [
+    {
+      "package": "github:TamasGorgics/oc-delivery-team#v0.4.0",
+      "options": {
+        "roles": {
+          "colors": {
+            "developer": "#123ABC",
+            "docs": "#0F766E"
+          }
+        }
+      }
+    }
+  ]
+}
+```
+
+Values must be six-digit hex colors (`#RRGGBB`, case-insensitive). Unknown role ids, non-string or non-hex values, and a non-object `roles.colors` emit a configuration warning and fall back to the defaults; valid entries for other roles still apply. Colors are presentation metadata only: the plugin sets `Agent.Info.color` when it registers the agents, and no database or schema change is involved.
 
 ### Models
 
@@ -230,13 +269,13 @@ When the wave is enabled (the default):
 
 If `qa` or `adversary` is listed in `roles.disabled`, setup emits one warning at `reviews.parallel` and treats the wave as disabled; sequential mode applies and no artifact is requested from the unregistered reviewer. Disabled review phases are skipped in both the default and explicit-`false` pipelines: with `adversary` disabled the advance is `test -> qa -> docs` and returns `skipped: ["adversary"]`; with `qa` disabled it is `test -> adversary -> docs`; with both disabled it is `test -> docs`. `team_status.next_action` names the skipped phases, and a run already sitting in a disabled review phase reports that no review artifact is required. `team_rewind` to a disabled review role is rejected with `review_role_disabled` before any state or loop change. Changing the option during an open run is unsupported — finish or restart the run before toggling it. An open run resumed after upgrading to `0.3.0` uses the new default; set `reviews.parallel:false` before reloading if you need the sequential pipeline.
 
-Known limitations in `0.3.0`:
+Known limitations in `0.4.0`:
 
 - A rewind to `qa` does not delete, move, archive, or freshness-check existing `qa.md` and `adversary.md`. Previously passing artifacts can make the barrier immediately `ready`. Prompts require both reviewers to overwrite their own artifacts, and `started_at`/`generation` show re-entry, but the gate does not enforce freshness.
 - Reviewer artifact ownership is prompt-level. The barrier verifies the two files' contents, not which agent wrote them, so run trusted agents and do not rely on the wave for review independence against a hostile or misconfigured writer.
 - Concurrent duplicate `team_advance` calls can both apply the same stale `qa -> docs` transition. Let one advance finish before re-reading status and retrying.
 - Host child-session overlap was verified in a two-session spike (~10.45s). Two-process shared-WAL safety and the sequential fallback are tested; provider rate limits or host scheduling can still serialize reviewers, in which case the fallback applies.
-- `0.3.0` adds no schema migration; schema version remains 3. Upgrading from a pre-`0.2.0` database applies migration 3, which rebuilds the `loops` table. Back up `.team/team.db` first. Legacy loop rows whose `run_id` is missing from `runs` make the migration fail safely and roll back; clean them up before retrying.
+- `0.4.0` adds no schema migration; schema version remains 3. Upgrading from a pre-`0.2.0` database applies migration 3, which rebuilds the `loops` table. Back up `.team/team.db` first. Legacy loop rows whose `run_id` is missing from `runs` make the migration fail safely and roll back; clean them up before retrying.
 
 ## Human approvals
 
@@ -298,7 +337,7 @@ This repository can be loaded directly during development through `.opencode/plu
 
 ### Developing the plugin with itself
 
-Yes, you can use the plugin to develop the plugin. OpenCode in this checkout already loads the local source through `.opencode/plugins/delivery-team/index.ts`; do not configure the published `github:...#v0.3.0` package for self-development, or you will run the released code instead of your working tree.
+Yes, you can use the plugin to develop the plugin. OpenCode in this checkout already loads the local source through `.opencode/plugins/delivery-team/index.ts`; do not configure the published `github:...#v0.4.0` package for self-development, or you will run the released code instead of your working tree.
 
 1. Start with a clean branch and run `/team` from this repository.
 2. Let the lead drive the normal phase gates. Source edits are blocked before `implement`; the developer and tester edit and run the project's Stack Profile commands.
@@ -325,7 +364,7 @@ Self-development uses the same `.team/` data root as other runs in this checkout
 - Prompt approvals require an OpenCode restart.
 - The plugin is developed and verified against OpenCode `2.2.0`; newer host releases require a compatibility check.
 - Live evals require an available model/provider; the unit suite uses a deterministic fake runner.
-- The manual `/team` quick start has not been re-verified for `0.3.0`; it remains a release-checklist item and blocks `v1.0.0`. Automated tests and the local quality gate are the current evidence.
+- The manual `/team` quick start has not been re-verified for `0.4.0`; it remains a release-checklist item and blocks `v1.0.0`. Automated tests and the local quality gate are the current evidence.
 
 ## Development
 

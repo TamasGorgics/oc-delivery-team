@@ -79,6 +79,8 @@ Each role has one responsibility, a default prompt, a model tier, a write scope,
 1. an approved `.team/prompts/<role>.md` override whose SHA matches an approved `prompt_versions` row, or
 2. the built-in prompt in `src/prompts/`.
 
+Agent registration also sets `Agent.Info.color` from the role table: `ROLE_COLORS` in `src/roles.ts` supplies the default palette for all nine roles, and the optional `roles.colors` map overrides individual roles. Invalid or unknown overrides emit configuration warnings and keep the default. Color is presentation metadata and adds no persistence or schema change.
+
 The human CLI is the only approval path for prompts and lessons. Pending proposals are never loaded as active prompts.
 
 ## Data boundaries

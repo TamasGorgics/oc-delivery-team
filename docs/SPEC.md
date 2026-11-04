@@ -1,6 +1,6 @@
 # Spec: `opencode-delivery-team` — a software delivery team as an OpenCode V2 plugin
 
-Status: draft v1.4 (v1.4 makes the parallel review wave the default and always registers `team_worktree`; v1.3 reconciles §7.7 with the delivered M8 behavior; v1.2 adds §7.7; v1.1 adds the stack-agnostic design §6.3 and per-role model routing §6.2) · Audience: an AI coding agent (OpenCode or Claude Code) implementing this end to end · Language: TypeScript
+Status: draft v1.5 (v1.5 adds per-role agent colors in §5 and §6; v1.4 makes the parallel review wave the default and always registers `team_worktree`; v1.3 reconciles §7.7 with the delivered M8 behavior; v1.2 adds §7.7; v1.1 adds the stack-agnostic design §6.3 and per-role model routing §6.2) · Audience: an AI coding agent (OpenCode or Claude Code) implementing this end to end · Language: TypeScript
 
 ---
 
@@ -210,6 +210,7 @@ Validate by hand (or with `zod` listed in `dependencies`); unknown keys → warn
 | `models` | object | `{}` (everything inherits the host default) | Model routing: tiers, per-role overrides, params, fallbacks. See §6.2 |
 | `stack` | object | `{}` | Stack profile detection and overrides: `{ detect?: bool (default true), overrides?: partial profile }`. See §6.3 |
 | `roles.disabled` | string[] | `[]` | Roles to not register |
+| `roles.colors` | object | `{}` | Per-role agent color overrides. Keys are role ids; values are six-digit hex strings (`#RRGGBB`). Unknown keys and invalid values warn and use the role's default. A non-object value warns and is ignored. No database or schema change |
 | `gating.enabled` | bool | `true` | Enforce phase gating |
 | `gating.strict` | bool | `false` | If run/phase can't be resolved for a tool call: `true` → block, `false` → allow + trace `gate.unresolved` |
 | `gating.editTools` | string[] | `["edit","write","patch"]` | Tool names treated as source edits **[VERIFY names]** |
@@ -235,19 +236,21 @@ The plugin `id` is `delivery-team`.
 
 ## 6. Roles (agents)
 
-Registered in `setup` through `ctx.agent.transform` **[DOC]**. Each agent: `description`, `mode`, prompt, permissions. Prompt field name and permission shape are **[VERIFY]** (v1 used `prompt` and `permission: { edit, bash }`).
+Registered in `setup` through `ctx.agent.transform` **[DOC]**. Each agent: `description`, `mode`, `color`, prompt, permissions. Prompt field name and permission shape are **[VERIFY]** (v1 used `prompt` and `permission: { edit, bash }`).
 
-| Role | Mode | Writes source? | Bash? | Primary artifact | Purpose |
-|---|---|---|---|---|---|
-| `team-lead` | primary | no | no | — | Orchestrates; never writes code |
-| `researcher` | subagent | no | no (web/read only) | `brainstorm.md` | Options, prior art, risks |
-| `spec` | subagent | no (only `.team/`) | no | `spec.md`, `plan.md` | Specification + implementation plan |
-| `developer` | subagent | **yes** | yes | `impl-notes.md` | Implements the plan (own worktree if enabled) |
-| `tester` | subagent | tests only | yes | `test-report.md` | Writes + runs tests from acceptance criteria; must not change `src` |
-| `qa` | subagent | no | read-only cmds | `qa.md` | Verifies behavior vs spec |
-| `adversary` | subagent | no | read-only cmds | `adversary.md` | Tries to break it: bugs, edge cases, security, spec gaps |
-| `docs` | subagent | docs only | no | `docs.md` | Updates README/docs |
-| `retro` | subagent | `.team/` only | no | `retro.md` | Extracts lessons; proposes prompt changes |
+| Role | Color | Mode | Writes source? | Bash? | Primary artifact | Purpose |
+|---|---|---|---|---|---|---|
+| `team-lead` | `#8B5CF6` | primary | no | no | — | Orchestrates; never writes code |
+| `researcher` | `#0EA5E9` | subagent | no | no (web/read only) | `brainstorm.md` | Options, prior art, risks |
+| `spec` | `#2563EB` | subagent | no (only `.team/`) | no | `spec.md`, `plan.md` | Specification + implementation plan |
+| `developer` | `#16A34A` | subagent | **yes** | yes | `impl-notes.md` | Implements the plan (own worktree if enabled) |
+| `tester` | `#CA8A04` | subagent | tests only | yes | `test-report.md` | Writes + runs tests from acceptance criteria; must not change `src` |
+| `qa` | `#DB2777` | subagent | no | read-only cmds | `qa.md` | Verifies behavior vs spec |
+| `adversary` | `#DC2626` | subagent | no | read-only cmds | `adversary.md` | Tries to break it: bugs, edge cases, security, spec gaps |
+| `docs` | `#0D9488` | subagent | docs only | no | `docs.md` | Updates README/docs |
+| `retro` | `#EA580C` | subagent | `.team/` only | no | `retro.md` | Extracts lessons; proposes prompt changes |
+
+Colors come from `ROLE_COLORS` in `src/roles.ts` and are applied to each registered agent's `Agent.Info.color`. The optional `roles.colors` map overrides individual entries; keys must be known role ids and values must be six-digit hex (`#RRGGBB`). Unknown keys and invalid values emit configuration warnings and fall back to the default. Color is presentation metadata only: there is no database or schema change.
 
 Rules:
 

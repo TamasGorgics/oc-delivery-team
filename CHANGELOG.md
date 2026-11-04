@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Add per-role agent colors. Each role definition now has a `color`, and `ROLE_COLORS` supplies the default palette: `team-lead` `#8B5CF6`, `researcher` `#0EA5E9`, `spec` `#2563EB`, `developer` `#16A34A`, `tester` `#CA8A04`, `qa` `#DB2777`, `adversary` `#DC2626`, `docs` `#0D9488`, `retro` `#EA580C`.
+- Add optional `roles.colors` overrides in plugin options. Keys must be known role ids and values six-digit hex (`#RRGGBB`); invalid or unknown entries and non-object values emit configuration warnings and fall back to the defaults. Agent registration sets `Agent.Info.color` from the override or the role default.
+- Tests: 231 pass / 0 fail / 2,111 expect / 27 files; prompt tests 6 pass / 0 fail / 221 expect; typecheck clean. CI runs typecheck, tests, prompt-neutrality tests, and package verification.
+- No database or schema change; schema version remains 3.
+
 ## 0.3.0
 
 - Make the parallel review wave the default: `reviews.parallel` now defaults to `true`. An explicit `reviews.parallel:false` preserves the exact sequential `qa -> adversary -> docs` pipeline, including single-artifact gates, no `review.wave.*` events or non-empty role loop rows, the disabled `review_wave` shape, rewind to `adversary`, and unchanged base prompts.
